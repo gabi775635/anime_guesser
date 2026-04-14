@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AnimeGuesser — Métriques serveur</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+<style>
+.chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <nav id="sidebar"></nav>
+  <main id="main">
+    <div class="page">
+      <div class="page-header">
+        <div class="page-title">Métriques serveur</div>
+        <div class="page-subtitle">Données en temps réel — actualisation toutes les 15 secondes</div>
+      </div>
+      <div class="stats-grid">
+        <div class="stat-card"><div class="stat-label">CPU Load (1m)</div><div class="stat-value teal" id="srv-cpu">—</div><div class="stat-delta" id="srv-cpu-sub">—</div></div>
+        <div class="stat-card"><div class="stat-label">RAM utilisée</div><div class="stat-value blue" id="srv-ram">—</div><div class="stat-delta" id="srv-ram-sub">—</div></div>
+        <div class="stat-card"><div class="stat-label">Disque</div><div class="stat-value gold" id="srv-disk">—</div><div class="stat-delta" id="srv-disk-sub">—</div></div>
+        <div class="stat-card"><div class="stat-label">Sessions actives</div><div class="stat-value accent" id="srv-sessions">—</div><div class="stat-delta">parties en cours</div></div>
+      </div>
+      <div class="chart-grid">
+        <div class="chart-card">
+          <div class="chart-title">CPU — 24h</div>
+          <div class="sparkline" id="chart-cpu"></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title">RAM — 24h</div>
+          <div class="sparkline" id="chart-ram"></div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+        <div class="chart-card">
+          <div class="chart-title">Ressources live</div>
+          <div id="live-resource-rows"></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title">Joueurs aujourd'hui</div>
+          <div id="live-player-rows"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="shared.js"></script>
+<script src="sidebar.js"></script>
+<script>
+injectSidebar();
+initSidebar('admin-server');
+
+let refreshInterval = null;
+
+async function loadServerMetrics() {
+  try {
+    const [live, hist] = await Promise.all([
+      api('GET', '/metrics/live'),
+      api('GET', '/metrics/server?hours=24'),
+    ]);
+
+    const cpuLoad = live.cpu.load_1.toFixed(2);
+    document.getElementById('srv-cpu').textContent     = cpuLoad;
+    document.getElementById('srv-cpu-sub').textContent = `5m: ${live.cpu.load_5.toFixed(2)} / 15m: ${live.cpu.load_15.toFixed(2)}`;
+
+    const ramPct = live.ram.total_mb > 0 ? Math.round(live.ram.used_mb / live.ram.total_mb * 100) : 0;
+    document.getElementById('srv-ram').textContent     = `${ramPct}%`;
+    document.getElementById('srv-ram-sub').textContent = `${live.ram.used_mb} MB / ${live.ram.total_mb} MB`;
+
+    const diskPct = live.disk.total_gb > 0 ? Math.round(live.disk.used_gb / live.disk.total_gb * 100) : 0;
+    document.getElementById('srv-disk').textContent     = `${diskPct}%`;
+    document.getElementById('srv-disk-sub').textContent = `${live.disk.used_gb} GB / ${live.disk.total_gb} GB`;
+
+    document.getElementById('srv-sessions').textContent = live.players.active_now;
+
+    renderSparkline('chart-cpu', hist.map(m => m.cpu_load_1), 'var(--teal)');
+    renderSparkline('chart-ram', hist.map(m => m.ram_total_mb > 0 ? Math.round(m.ram_used_mb / m.ram_total_mb * 100) : 0), 'var(--blue)');
+
+    document.getElementById('live-resource-rows').innerHTML = `
+      <div class="metric-row"><span class="metric-name">CPU</span><div class="progress-mini"><div class="progress-mini-fill" style="width:${Math.min(cpuLoad * 25, 100)}%;background:var(--teal)"></div></div><span class="metric-val">${cpuLoad}</span></div>
+      <div class="metric-row"><span class="metric-name">RAM</span><div class="progress-mini"><div class="progress-mini-fill" style="width:${ramPct}%;background:var(--blue)"></div></div><span class="metric-val">${ramPct}%</span></div>
+      <div class="metric-row"><span class="metric-name">Disque</span><div class="progress-mini"><div class="progress-mini-fill" style="width:${diskPct}%;background:var(--gold)"></div></div><span class="metric-val">${diskPct}%</span></div>`;
+
+    document.getElementById('live-player-rows').innerHTML = `
+      <div class="metric-row"><span class="metric-name">Sessions actives</span><span class="metric-val" style="color:var(--accent)">${live.players.active_now}</span></div>
+      <div class="metric-row"><span class="metric-name">Utilisateurs total</span><span class="metric-val">${live.players.total_users}</span></div>
+      <div class="metric-row"><span class="metric-name">Parties aujourd'hui</span><span class="metric-val" style="color:var(--teal)">${live.players.today_games}</span></div>
+      <div class="metric-row"><span class="metric-name">Nouvelles inscriptions</span><span class="metric-val" style="color:var(--gold)">${live.players.today_new}</span></div>`;
+  } catch (e) {
+    document.getElementById('srv-cpu').textContent = 'ERR';
+  }
+}
+
+loadServerMetrics();
+refreshInterval = setInterval(loadServerMetrics, 15000);
+window.addEventListener('beforeunload', () => clearInterval(refreshInterval));
+</script>
+</body>
+</html>

@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AnimeGuesser — Utilisateurs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div id="app">
+  <nav id="sidebar"></nav>
+  <main id="main">
+    <div class="page">
+      <div class="flex-between">
+        <div class="page-header" style="margin-bottom:0">
+          <div class="page-title">Utilisateurs</div>
+        </div>
+        <div class="flex-gap">
+          <input id="user-search" class="form-input" style="width:220px" placeholder="Rechercher..." oninput="filterUsers()" />
+          <select id="user-role-filter" class="form-input" style="width:140px" onchange="filterUsers()">
+            <option value="">Tous les rôles</option>
+            <option value="admin">Admin</option>
+            <option value="moderateur">Modérateur</option>
+            <option value="joueur">Joueur</option>
+          </select>
+        </div>
+      </div>
+      <div style="margin-top:24px" class="table-wrap">
+        <table>
+          <thead><tr><th>Pseudo</th><th>Email</th><th>Rôle</th><th>XP</th><th>Statut</th><th>Dernière co.</th><th>Actions</th></tr></thead>
+          <tbody id="users-body">
+            <tr><td colspan="7" style="text-align:center;color:var(--text3);padding:32px"><span class="spinner"></span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- MODAL BAN -->
+<div class="modal-overlay" id="modal-ban">
+  <div class="modal">
+    <div class="modal-title">Bannir l'utilisateur</div>
+    <input type="hidden" id="ban-user-id" />
+    <div class="form-group">
+      <label class="form-label">Raison du bannissement</label>
+      <textarea id="ban-reason" class="form-input" rows="3" placeholder="Décris la raison..."></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-ban')">Annuler</button>
+      <button class="btn btn-danger" onclick="confirmBan()">Bannir</button>
+    </div>
+  </div>
+</div>
+
+<script src="shared.js"></script>
+<script src="sidebar.js"></script>
+<script>
+injectSidebar();
+initSidebar('admin-users');
+
+let allUsers = [];
+
+async function loadAdminUsers() {
+  try {
+    const data = await api('GET', '/admin/users');
+    allUsers = data.data || data;
+    renderUsers(allUsers);
+  } catch (e) {}
+}
+
+function renderUsers(list) {
+  document.getElementById('users-body').innerHTML = list.map(u => `
+    <tr>
+      <td><strong>${esc(u.pseudo)}</strong></td>
+      <td style="color:var(--text2)">${esc(u.email)}</td>
+      <td><span class="badge badge-${u.role === 'admin' ? 'admin' : u.role === 'moderateur' ? 'mod' : 'joueur'}">${u.role}</span></td>
+      <td>${(u.xp ?? 0).toLocaleString()}</td>
+      <td>${u.is_banned ? '<span class="badge badge-banned">Banni</span>' : '<span class="badge badge-ok">Actif</span>'}</td>
+      <td style="color:var(--text3)">${u.last_login_at ? formatDate(u.last_login_at) : '—'}</td>
+      <td>
+        <div class="flex-gap">
+          <select class="form-input" style="width:120px;padding:4px 8px;font-size:12px" onchange="changeRole(${u.id}, this.value)">
+            <option ${u.role==='admin'?'selected':''} value="admin">Admin</option>
+            <option ${u.role==='moderateur'?'selected':''} value="moderateur">Modérateur</option>
+            <option ${u.role==='joueur'?'selected':''} value="joueur">Joueur</option>
+          </select>
+          ${u.is_banned
+            ? `<button class="btn btn-ghost btn-sm" onclick="unbanUser(${u.id})">Débannir</button>`
+            : `<button class="btn btn-danger btn-sm" onclick="openBanModal(${u.id})">Bannir</button>`}
+          <button class="btn btn-danger btn-sm" onclick="deleteUser(${u.id})">✕</button>
+        </div>
+      </td>
+    </tr>`).join('') || '<tr><td colspan="7" style="color:var(--text3);text-align:center;padding:24px">Aucun utilisateur</td></tr>';
+}
+
+function filterUsers() {
+  const q    = document.getElementById('user-search').value.toLowerCase();
+  const role = document.getElementById('user-role-filter').value;
+  renderUsers(allUsers.filter(u =>
+    (!q    || u.pseudo.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)) &&
+    (!role || u.role === role)
+  ));
+}
+
+async function changeRole(id, role) {
+  await api('PATCH', `/admin/users/${id}/role`, { role }).catch(e => alert(e.message));
+  loadAdminUsers();
+}
+
+function openBanModal(id) {
+  document.getElementById('ban-user-id').value = id;
+  document.getElementById('ban-reason').value = '';
+  document.getElementById('modal-ban').classList.add('open');
+}
+
+async function confirmBan() {
+  const id = document.getElementById('ban-user-id').value;
+  const reason = document.getElementById('ban-reason').value.trim();
+  if (!reason) return alert('Raison obligatoire.');
+  await api('PATCH', `/admin/users/${id}/ban`, { reason }).catch(e => alert(e.message));
+  closeModal('modal-ban');
+  loadAdminUsers();
+}
+
+async function unbanUser(id) {
+  await api('PATCH', `/admin/users/${id}/unban`).catch(e => alert(e.message));
+  loadAdminUsers();
+}
+
+async function deleteUser(id) {
+  if (!confirm('Supprimer définitivement ce compte ?')) return;
+  await api('DELETE', `/admin/users/${id}`).catch(e => alert(e.message));
+  loadAdminUsers();
+}
+
+loadAdminUsers();
+</script>
+</body>
+</html>

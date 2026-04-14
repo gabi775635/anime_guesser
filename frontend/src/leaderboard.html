@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AnimeGuesser — Classement</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div id="app">
+  <nav id="sidebar"></nav>
+  <main id="main">
+    <div class="page">
+      <div class="page-header">
+        <div class="page-title">Classement</div>
+        <div class="page-subtitle">Les meilleurs joueurs de la plateforme</div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>#</th><th>Joueur</th><th>XP total</th><th>Parties</th><th>Précision</th></tr></thead>
+          <tbody id="leaderboard-body">
+            <tr><td colspan="5" style="text-align:center;color:var(--text3);padding:32px"><span class="spinner"></span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="shared.js"></script>
+<script src="sidebar.js"></script>
+<script>
+injectSidebar();
+initSidebar('leaderboard');
+
+async function loadLeaderboard() {
+  try {
+    const data = await api('GET', '/leaderboard');
+    const tbody = document.getElementById('leaderboard-body');
+    tbody.innerHTML = data.map((u, i) => `
+      <tr class="rank-${i+1}">
+        <td>${i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}</td>
+        <td><strong>${esc(u.pseudo)}</strong></td>
+        <td>${(u.xp ?? 0).toLocaleString()}</td>
+        <td>${u.sessions_count ?? 0}</td>
+        <td>${u.accuracy ?? '—'}%</td>
+      </tr>`).join('');
+  } catch (e) {
+    document.getElementById('leaderboard-body').innerHTML = `<tr><td colspan="5" style="color:var(--accent);padding:24px;text-align:center">${e.message}</td></tr>`;
+  }
+}
+loadLeaderboard();
+</script>
+</body>
+</html>

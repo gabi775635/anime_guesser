@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AnimeGuesser — Profil</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+<style>
+.profile-layout { display: grid; grid-template-columns: 300px 1fr; gap: 24px; }
+
+/* Mode stats tabs */
+.mode-tabs { display: flex; gap: 6px; margin-bottom: 20px; }
+.mode-tab {
+  padding: 7px 16px; border-radius: var(--radius); font-size: 13px; font-weight: 500;
+  cursor: pointer; border: 1px solid var(--border2); color: var(--text2);
+  background: transparent; transition: all .15s;
+}
+.mode-tab.active { background: var(--surface2); color: var(--text); border-color: var(--accent); }
+
+/* Per-mode stat card */
+.mode-stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 20px; }
+.mode-stat-item { background: var(--bg3); border-radius: var(--radius); padding: 14px 16px; }
+.mode-stat-label { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 6px; }
+.mode-stat-val { font-family: var(--font-display); font-size: 22px; font-weight: 700; }
+
+/* Accuracy bar */
+.acc-bar-wrap { margin-top: 10px; }
+.acc-bar-label { display: flex; justify-content: space-between; font-size: 12px; color: var(--text3); margin-bottom: 4px; }
+.acc-bar-track { height: 6px; background: var(--bg3); border-radius: 3px; overflow: hidden; }
+.acc-bar-fill  { height: 100%; border-radius: 3px; transition: width .6s; }
+
+/* Score column color */
+.score-cell { font-weight: 700; }
+
+/* History score bar inline */
+.history-score-bar {
+  display: inline-block; height: 4px; border-radius: 2px;
+  vertical-align: middle; margin-left: 6px;
+  transition: width .4s;
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <nav id="sidebar"></nav>
+  <main id="main">
+    <div class="page">
+      <div class="page-header">
+        <div class="page-title">Mon profil</div>
+      </div>
+
+      <div class="profile-layout">
+
+        <!-- LEFT COLUMN -->
+        <div>
+          <!-- Identity card -->
+          <div class="stat-card" style="text-align:center;padding:28px;margin-bottom:16px">
+            <div id="profile-avatar" style="width:64px;height:64px;font-size:24px;margin:0 auto 16px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--blue));display:flex;align-items:center;justify-content:center;font-weight:700">?</div>
+            <div style="font-family:var(--font-display);font-size:22px;font-weight:700" id="profile-pseudo">—</div>
+            <div class="badge badge-joueur" style="margin-top:8px" id="profile-role-badge">joueur</div>
+          </div>
+
+          <!-- Global stats -->
+          <div class="stat-card" style="margin-bottom:16px">
+            <div style="font-family:var(--font-display);font-size:13px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:12px">Statistiques globales</div>
+            <div class="metric-row"><span class="metric-name">XP total</span><span class="metric-val gold" id="profile-xp">—</span></div>
+            <div class="metric-row"><span class="metric-name">Parties jouées</span><span class="metric-val" id="profile-games">—</span></div>
+            <div class="metric-row"><span class="metric-name">Bonnes réponses</span><span class="metric-val teal" id="profile-correct">—</span></div>
+            <div class="metric-row"><span class="metric-name">Précision globale</span><span class="metric-val" id="profile-accuracy">—</span></div>
+            <div class="metric-row"><span class="metric-name">Meilleur score</span><span class="metric-val blue" id="profile-best">—</span></div>
+            <div class="metric-row"><span class="metric-name">Membre depuis</span><span class="metric-val" id="profile-since">—</span></div>
+          </div>
+
+          <!-- Accuracy bar -->
+          <div class="stat-card">
+            <div style="font-family:var(--font-display);font-size:13px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:12px">Précision par mode</div>
+            <div id="accuracy-bars">
+              <div style="color:var(--text3);font-size:13px">Chargement...</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- RIGHT COLUMN -->
+        <div>
+          <!-- Per-mode stats -->
+          <div class="stat-card" style="margin-bottom:20px">
+            <div class="flex-between" style="margin-bottom:0">
+              <div style="font-family:var(--font-display);font-size:16px;font-weight:700">Stats par mode</div>
+            </div>
+            <div class="mode-tabs" style="margin-top:14px">
+              <button class="mode-tab active" onclick="switchMode('screenshot')">🖼️ Screenshot</button>
+              <button class="mode-tab" onclick="switchMode('description')">📖 Description</button>
+              <button class="mode-tab" onclick="switchMode('portrait')">🎭 Portrait</button>
+            </div>
+            <div id="mode-stats-panel">
+              <div style="color:var(--text3);font-size:13px;padding:12px 0">Chargement...</div>
+            </div>
+          </div>
+
+          <!-- History table -->
+          <div class="flex-between">
+            <div style="font-family:var(--font-display);font-size:16px;font-weight:700">Historique des parties</div>
+            <div class="flex-gap">
+              <select id="history-filter" class="form-input" style="width:150px;padding:6px 10px;font-size:13px" onchange="renderHistory()">
+                <option value="">Tous les modes</option>
+                <option value="screenshot">Screenshot</option>
+                <option value="description">Description</option>
+                <option value="portrait">Portrait</option>
+              </select>
+            </div>
+          </div>
+          <div class="table-wrap" style="margin-top:12px">
+            <table>
+              <thead><tr><th>Date</th><th>Mode</th><th>Score /1000</th><th>Rang</th><th>Rounds</th><th>Précision</th></tr></thead>
+              <tbody id="history-body">
+                <tr><td colspan="6" style="text-align:center;color:var(--text3);padding:24px">Chargement...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="shared.js"></script>
+<script src="sidebar.js"></script>
+<script>
+injectSidebar();
+initSidebar('profile');
+
+let allHistory = [];
+let modeStats = {};
+let currentMode = 'screenshot';
+
+async function loadProfile() {
+  try {
+    const data = await api('GET', '/profile');
+    document.getElementById('profile-pseudo').textContent = data.pseudo;
+    document.getElementById('profile-avatar').textContent = data.pseudo[0].toUpperCase();
+    document.getElementById('profile-role-badge').textContent = data.role;
+    document.getElementById('profile-role-badge').className = 'badge badge-' + (data.role === 'admin' ? 'admin' : data.role === 'moderateur' ? 'mod' : 'joueur');
+    document.getElementById('profile-xp').textContent       = (data.xp ?? 0).toLocaleString();
+    document.getElementById('profile-games').textContent    = data.sessions_count ?? 0;
+    document.getElementById('profile-correct').textContent  = data.correct_count ?? 0;
+    document.getElementById('profile-best').textContent     = (data.best_score ?? 0).toLocaleString();
+    const acc = data.rounds_count ? Math.round(data.correct_count / data.rounds_count * 100) : 0;
+    document.getElementById('profile-accuracy').textContent = acc + '%';
+    document.getElementById('profile-since').textContent    = formatDate(data.created_at);
+
+    // Per-mode stats
+    modeStats = data.mode_stats || {};
+    renderModeStats();
+    renderAccuracyBars();
+  } catch (e) {}
+}
+
+async function loadHistory() {
+  try {
+    const history = await api('GET', '/profile/history');
+    allHistory = history;
+    renderHistory();
+  } catch (e) {}
+}
+
+function renderHistory() {
+  const filter = document.getElementById('history-filter').value;
+  const list = filter ? allHistory.filter(s => s.mode === filter) : allHistory;
+  const MAX = 1000;
+  document.getElementById('history-body').innerHTML = list.map(s => {
+    const acc   = s.rounds_played ? Math.round(s.rounds_correct / s.rounds_played * 100) : 0;
+    const score = s.score_total ?? 0;
+    const rank  = scoreRank(score, MAX);
+    const color = scoreColor(score, MAX);
+    const pct   = Math.min(100, Math.round(score / MAX * 100));
+    return `<tr>
+      <td>${formatDate(s.started_at)}</td>
+      <td>${modeBadge(s.mode)}</td>
+      <td>
+        <span class="score-cell" style="color:${color}">${score.toLocaleString()}</span>
+        <span class="history-score-bar" style="width:${pct}px;background:${color}"></span>
+      </td>
+      <td><span style="color:${color};font-family:var(--font-display);font-weight:800;font-size:16px">${rank}</span></td>
+      <td>${s.rounds_played}</td>
+      <td>${acc}%</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="6" style="color:var(--text3);text-align:center;padding:24px">Aucune partie</td></tr>';
+}
+
+function switchMode(mode) {
+  currentMode = mode;
+  document.querySelectorAll('.mode-tab').forEach(t => t.classList.remove('active'));
+  event.target.classList.add('active');
+  renderModeStats();
+}
+
+function renderModeStats() {
+  const m = modeStats[currentMode] || {};
+  const acc = m.rounds_played ? Math.round(m.rounds_correct / m.rounds_played * 100) : 0;
+  const best = m.best_score ?? 0;
+  const rank = scoreRank(best, 1000);
+  const color = scoreColor(best, 1000);
+  document.getElementById('mode-stats-panel').innerHTML = `
+    <div class="mode-stat-grid">
+      <div class="mode-stat-item">
+        <div class="mode-stat-label">Parties</div>
+        <div class="mode-stat-val accent">${m.sessions_count ?? 0}</div>
+      </div>
+      <div class="mode-stat-item">
+        <div class="mode-stat-label">Meilleur score</div>
+        <div class="mode-stat-val" style="color:${color}">${best.toLocaleString()} <span style="font-size:16px">(${rank})</span></div>
+      </div>
+      <div class="mode-stat-item">
+        <div class="mode-stat-label">Rounds joués</div>
+        <div class="mode-stat-val teal">${m.rounds_played ?? 0}</div>
+      </div>
+      <div class="mode-stat-item">
+        <div class="mode-stat-label">Précision</div>
+        <div class="mode-stat-val gold">${acc}%</div>
+      </div>
+    </div>
+    <div class="acc-bar-wrap">
+      <div class="acc-bar-label"><span>Précision</span><span>${acc}%</span></div>
+      <div class="acc-bar-track">
+        <div class="acc-bar-fill" style="width:${acc}%;background:${acc >= 70 ? 'var(--teal)' : acc >= 40 ? 'var(--gold)' : 'var(--accent)'}"></div>
+      </div>
+    </div>`;
+}
+
+function renderAccuracyBars() {
+  const modes = ['screenshot', 'description', 'portrait'];
+  const icons = { screenshot: '🖼️', description: '📖', portrait: '🎭' };
+  document.getElementById('accuracy-bars').innerHTML = modes.map(m => {
+    const d = modeStats[m] || {};
+    const acc = d.rounds_played ? Math.round(d.rounds_correct / d.rounds_played * 100) : 0;
+    const color = acc >= 70 ? 'var(--teal)' : acc >= 40 ? 'var(--gold)' : 'var(--accent)';
+    return `<div class="acc-bar-wrap" style="margin-bottom:10px">
+      <div class="acc-bar-label">
+        <span>${icons[m]} ${m.charAt(0).toUpperCase() + m.slice(1)}</span>
+        <span>${acc}%</span>
+      </div>
+      <div class="acc-bar-track">
+        <div class="acc-bar-fill" style="width:${acc}%;background:${color}"></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+loadProfile();
+loadHistory();
+</script>
+</body>
+</html>

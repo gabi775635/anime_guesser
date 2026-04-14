@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AnimeGuesser — Signalements</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div id="app">
+  <nav id="sidebar"></nav>
+  <main id="main">
+    <div class="page">
+      <div class="page-header">
+        <div class="page-title">Signalements</div>
+        <div class="page-subtitle">Signalements en attente de traitement</div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Signalé par</th><th>Cible</th><th>Raison</th><th>Statut</th><th>Date</th><th>Action</th></tr></thead>
+          <tbody id="reports-body">
+            <tr><td colspan="6" style="text-align:center;color:var(--text3);padding:32px"><span class="spinner"></span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="shared.js"></script>
+<script src="sidebar.js"></script>
+<script>
+injectSidebar();
+initSidebar('mod-reports');
+
+async function loadModReports() {
+  try {
+    const data = await api('GET', '/reports');
+    const list = data.data || data;
+    document.getElementById('reports-body').innerHTML = list.map(r => `
+      <tr>
+        <td>${esc(r.reporter?.pseudo ?? '—')}</td>
+        <td>${esc(r.target?.pseudo ?? '—')}</td>
+        <td style="max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.reason)}</td>
+        <td><span class="badge ${r.status === 'pending' ? 'badge-warn' : r.status === 'resolved' ? 'badge-ok' : 'badge-banned'}">${r.status}</span></td>
+        <td>${formatDate(r.created_at)}</td>
+        <td>${r.status === 'pending' ? `<button class="btn btn-ghost btn-sm" onclick="resolveReport(${r.id})">Résoudre</button>` : ''}</td>
+      </tr>`).join('') || '<tr><td colspan="6" style="color:var(--text3);text-align:center;padding:24px">Aucun signalement</td></tr>';
+  } catch (e) {}
+}
+
+async function resolveReport(id) {
+  await api('PATCH', `/reports/${id}`, { status: 'resolved' }).catch(e => alert(e.message));
+  loadModReports();
+}
+
+loadModReports();
+</script>
+</body>
+</html>
