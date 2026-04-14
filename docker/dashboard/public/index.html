@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>AnimeGuesser — Infrastructure</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Barlow:wght@300;400;600;700;900&display=swap" rel="stylesheet"/>
+<style>
+:root {
+  --bg:        #080c10;
+  --bg2:       #0d1117;
+  --bg3:       #161b22;
+  --surface:   #1c2128;
+  --surface2:  #21262d;
+  --border:    rgba(255,255,255,0.06);
+  --border2:   rgba(255,255,255,0.12);
+  --green:     #3fb950;
+  --green2:    #56d364;
+  --red:       #f85149;
+  --yellow:    #d29922;
+  --blue:      #388bfd;
+  --purple:    #bc8cff;
+  --text:      #e6edf3;
+  --text2:     #7d8590;
+  --text3:     #484f58;
+  --mono:      'JetBrains Mono', monospace;
+  --sans:      'Barlow', sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 14px; }
+
+/* ── SCAN LINE OVERLAY ── */
+body::before {
+  content: '';
+  position: fixed; inset: 0; z-index: 9999;
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px);
+  pointer-events: none;
+}
+
+/* ── HEADER ── */
+header {
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border2);
+  padding: 16px 32px;
+  display: flex; align-items: center; justify-content: space-between;
+  position: sticky; top: 0; z-index: 100;
+}
+.logo {
+  font-family: var(--mono); font-size: 13px; font-weight: 700;
+  letter-spacing: 2px; text-transform: uppercase;
+  display: flex; align-items: center; gap: 12px;
+}
+.logo-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); animation: blink 2s ease-in-out infinite; }
+@keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+.header-right { display: flex; align-items: center; gap: 20px; }
+.ws-status { font-family: var(--mono); font-size: 11px; color: var(--text3); display: flex; align-items: center; gap: 6px; }
+.ws-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--red); transition: background .3s; }
+.ws-dot.connected { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.time-display { font-family: var(--mono); font-size: 12px; color: var(--text2); }
+
+/* ── LAYOUT ── */
+.container { max-width: 1400px; margin: 0 auto; padding: 32px; }
+
+/* ── SUMMARY STRIP ── */
+.summary-strip {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px;
+  background: var(--border); border: 1px solid var(--border);
+  border-radius: 8px; overflow: hidden; margin-bottom: 32px;
+}
+.summary-item {
+  background: var(--bg2); padding: 20px 24px;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.summary-label { font-family: var(--mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text3); }
+.summary-value { font-family: var(--mono); font-size: 32px; font-weight: 700; line-height: 1; }
+.summary-value.green  { color: var(--green); }
+.summary-value.red    { color: var(--red); }
+.summary-value.blue   { color: var(--blue); }
+.summary-value.yellow { color: var(--yellow); }
+
+/* ── SECTION HEADER ── */
+.section-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 16px;
+}
+.section-title {
+  font-family: var(--mono); font-size: 11px; font-weight: 700;
+  letter-spacing: 2px; text-transform: uppercase; color: var(--text2);
+  display: flex; align-items: center; gap: 10px;
+}
+.section-title::before { content: '//'; color: var(--text3); }
+
+/* ── BUTTONS ── */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 14px; border-radius: 6px; font-family: var(--mono);
+  font-size: 12px; font-weight: 500; cursor: pointer;
+  border: 1px solid transparent; transition: all .15s; text-decoration: none;
+  letter-spacing: 0.5px;
+}
+.btn-green  { background: rgba(63,185,80,0.1);  color: var(--green);  border-color: rgba(63,185,80,0.3); }
+.btn-green:hover  { background: rgba(63,185,80,0.2); }
+.btn-red    { background: rgba(248,81,73,0.1);   color: var(--red);    border-color: rgba(248,81,73,0.3); }
+.btn-red:hover    { background: rgba(248,81,73,0.2); }
+.btn-blue   { background: rgba(56,139,253,0.1);  color: var(--blue);   border-color: rgba(56,139,253,0.3); }
+.btn-blue:hover   { background: rgba(56,139,253,0.2); }
+.btn-ghost  { background: transparent; color: var(--text2); border-color: var(--border2); }
+.btn-ghost:hover  { background: var(--surface); color: var(--text); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ── CONTAINER GRID ── */
+.containers-grid { display: flex; flex-direction: column; gap: 10px; margin-bottom: 40px; }
+
+.container-row {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 16px 20px;
+  display: grid; grid-template-columns: 20px 200px 100px 1fr 120px 120px 160px;
+  align-items: center; gap: 16px;
+  transition: border-color .15s;
+}
+.container-row:hover { border-color: var(--border2); }
+.container-row.stopped { opacity: 0.6; }
+
+.status-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+}
+.status-dot.running { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.status-dot.stopped, .status-dot.exited { background: var(--red); }
+.status-dot.paused  { background: var(--yellow); }
+
+.c-name { font-family: var(--mono); font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.c-id   { font-family: var(--mono); font-size: 11px; color: var(--text3); }
+
+.service-badge {
+  display: inline-flex; align-items: center; padding: 2px 8px;
+  border-radius: 4px; font-family: var(--mono); font-size: 10px; font-weight: 700;
+  letter-spacing: 0.5px; text-transform: uppercase;
+}
+.badge-frontend    { background: rgba(56,139,253,0.1);  color: var(--blue);   border: 1px solid rgba(56,139,253,0.2); }
+.badge-backend     { background: rgba(188,140,255,0.1); color: var(--purple); border: 1px solid rgba(188,140,255,0.2); }
+.badge-loadbalancer{ background: rgba(210,153,34,0.1);  color: var(--yellow); border: 1px solid rgba(210,153,34,0.2); }
+.badge-database    { background: rgba(63,185,80,0.1);   color: var(--green);  border: 1px solid rgba(63,185,80,0.2); }
+.badge-dashboard   { background: rgba(255,255,255,0.05);color: var(--text2);  border: 1px solid var(--border); }
+
+/* Metric bars */
+.metric-wrap { display: flex; flex-direction: column; gap: 4px; }
+.metric-label { font-family: var(--mono); font-size: 10px; color: var(--text3); display: flex; justify-content: space-between; }
+.metric-bar { height: 4px; background: var(--surface2); border-radius: 2px; overflow: hidden; }
+.metric-fill { height: 100%; border-radius: 2px; transition: width .5s ease; }
+.fill-green  { background: var(--green); }
+.fill-yellow { background: var(--yellow); }
+.fill-red    { background: var(--red); }
+
+.actions { display: flex; gap: 6px; justify-content: flex-end; }
+
+/* ── LOGS PANEL ── */
+.logs-panel {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 8px; overflow: hidden; margin-bottom: 40px;
+  display: none;
+}
+.logs-panel.open { display: block; }
+.logs-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 20px; background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.logs-title { font-family: var(--mono); font-size: 12px; color: var(--text2); }
+.logs-content {
+  padding: 16px 20px; max-height: 300px; overflow-y: auto;
+  font-family: var(--mono); font-size: 11px; line-height: 1.8;
+  color: var(--text2); white-space: pre-wrap; word-break: break-all;
+}
+.logs-content::-webkit-scrollbar { width: 4px; }
+.logs-content::-webkit-scrollbar-thumb { background: var(--surface2); }
+
+/* ── TOAST ── */
+#toast-wrap { position: fixed; bottom: 24px; right: 24px; z-index: 9998; display: flex; flex-direction: column; gap: 8px; }
+.toast {
+  background: var(--surface); border: 1px solid var(--border2);
+  border-radius: 6px; padding: 12px 16px;
+  font-family: var(--mono); font-size: 12px;
+  animation: slideIn .2s ease; min-width: 260px;
+  display: flex; align-items: center; gap: 10px;
+}
+.toast.success { border-color: rgba(63,185,80,0.4); }
+.toast.error   { border-color: rgba(248,81,73,0.4); }
+@keyframes slideIn { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+/* ── MODAL ── */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 200; display: none; }
+.modal-overlay.open { display: flex; }
+.modal { background: var(--bg2); border: 1px solid var(--border2); border-radius: 10px; padding: 28px; width: 420px; max-width: 90vw; }
+.modal-title { font-family: var(--mono); font-size: 14px; font-weight: 700; margin-bottom: 12px; color: var(--text); }
+.modal-body  { font-size: 13px; color: var(--text2); margin-bottom: 20px; line-height: 1.6; }
+.modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-dot"></div>
+    AnimeGuesser // Infrastructure
+  </div>
+  <div class="header-right">
+    <div class="ws-status">
+      <div class="ws-dot" id="ws-dot"></div>
+      <span id="ws-label">Disconnected</span>
+    </div>
+    <div class="time-display" id="clock">--:--:--</div>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- Summary -->
+  <div class="summary-strip">
+    <div class="summary-item">
+      <div class="summary-label">Total conteneurs</div>
+      <div class="summary-value blue" id="s-total">—</div>
+    </div>
+    <div class="summary-item">
+      <div class="summary-label">En cours</div>
+      <div class="summary-value green" id="s-running">—</div>
+    </div>
+    <div class="summary-item">
+      <div class="summary-label">Arrêtés</div>
+      <div class="summary-value red" id="s-stopped">—</div>
+    </div>
+    <div class="summary-item">
+      <div class="summary-label">Instances frontend</div>
+      <div class="summary-value yellow" id="s-frontends">—</div>
+    </div>
+  </div>
+
+  <!-- Containers -->
+  <div class="section-header">
+    <div class="section-title">Conteneurs</div>
+    <button class="btn btn-green" onclick="addFrontend()" id="btn-add">
+      <span>＋</span> Ajouter frontend
+    </button>
+  </div>
+  <div class="containers-grid" id="containers-grid">
+    <div style="text-align:center;padding:40px;color:var(--text3);font-family:var(--mono);font-size:12px">
+      Chargement...
+    </div>
+  </div>
+
+  <!-- Logs -->
+  <div class="logs-panel" id="logs-panel">
+    <div class="logs-header">
+      <span class="logs-title" id="logs-title">Logs — —</span>
+      <button class="btn btn-ghost" onclick="closeLogs()" style="padding:4px 10px;font-size:11px">✕ Fermer</button>
+    </div>
+    <div class="logs-content" id="logs-content">Chargement...</div>
+  </div>
+
+</div>
+
+<!-- Toast container -->
+<div id="toast-wrap"></div>
+
+<!-- Confirm modal -->
+<div class="modal-overlay" id="modal-confirm">
+  <div class="modal">
+    <div class="modal-title" id="modal-title">Confirmation</div>
+    <div class="modal-body"  id="modal-body">Êtes-vous sûr ?</div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">Annuler</button>
+      <button class="btn btn-red"   id="modal-confirm-btn" onclick="confirmAction()">Confirmer</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── State ──────────────────────────────────
+let containers    = [];
+let statsMap      = {};
+let pendingAction = null;
+let logsContainer = null;
+let ws            = null;
+
+// ── Clock ──────────────────────────────────
+function updateClock() {
+  document.getElementById('clock').textContent = new Date().toLocaleTimeString('fr-FR');
+}
+updateClock();
+setInterval(updateClock, 1000);
+
+// ── WebSocket ──────────────────────────────
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+
+  ws.onopen = () => {
+    document.getElementById('ws-dot').classList.add('connected');
+    document.getElementById('ws-label').textContent = 'Live';
+  };
+  ws.onclose = () => {
+    document.getElementById('ws-dot').classList.remove('connected');
+    document.getElementById('ws-label').textContent = 'Reconnecting…';
+    setTimeout(connectWS, 3000);
+  };
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'stats_update') {
+      msg.stats.forEach(s => { statsMap[s.id] = s; });
+      applyStatsToDOM();
+    } else if (['container_added','container_removed','container_started','container_stopped','container_restarted'].includes(msg.type)) {
+      loadContainers();
+    }
+  };
+}
+
+// ── API ─────────────────────────────────────
+async function apiFetch(method, path, body) {
+  const r = await fetch(path, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.error || 'Erreur serveur');
+  return d;
+}
+
+// ── Load containers ─────────────────────────
+async function loadContainers() {
+  try {
+    containers = await apiFetch('GET', '/api/containers');
+    const summary = await apiFetch('GET', '/api/summary');
+    renderContainers();
+    renderSummary(summary);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function renderSummary(s) {
+  document.getElementById('s-total').textContent    = s.total;
+  document.getElementById('s-running').textContent  = s.running;
+  document.getElementById('s-stopped').textContent  = s.stopped;
+  document.getElementById('s-frontends').textContent = s.frontends;
+}
+
+// ── Service badge ───────────────────────────
+function serviceBadge(service) {
+  const map = {
+    frontend:     'badge-frontend',
+    backend:      'badge-backend',
+    loadbalancer: 'badge-loadbalancer',
+    database:     'badge-database',
+    dashboard:    'badge-dashboard',
+  };
+  return `<span class="service-badge ${map[service] ?? 'badge-dashboard'}">${service}</span>`;
+}
+
+// ── Metric bar color ────────────────────────
+function barColor(pct) {
+  if (pct > 80) return 'fill-red';
+  if (pct > 50) return 'fill-yellow';
+  return 'fill-green';
+}
+
+// ── Render containers ───────────────────────
+function renderContainers() {
+  const grid = document.getElementById('containers-grid');
+
+  // Group by service
+  const order = ['loadbalancer', 'frontend', 'backend', 'database', 'dashboard'];
+  const sorted = [...containers].sort((a, b) => {
+    const ai = order.indexOf(a.service);
+    const bi = order.indexOf(b.service);
+    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+  });
+
+  const base = ['animeguesser-frontend-1', 'animeguesser-frontend-2',
+                 'animeguesser-backend',    'animeguesser-lb', 'animeguesser-db'];
+
+  grid.innerHTML = sorted.map(c => {
+    const s      = statsMap[c.id] || c;
+    const cpu    = s.cpu    ?? 0;
+    const memPct = s.memPct ?? 0;
+    const memMB  = s.memMB  ?? 0;
+    const status = s.status ?? c.status;
+    const isBase = base.includes(c.name);
+
+    const actions = status === 'running'
+      ? `<button class="btn btn-ghost" onclick="viewLogs('${c.fullId}','${c.name}')" title="Logs">📋</button>
+         <button class="btn btn-yellow" onclick="restartContainer('${c.fullId}','${c.name}')" title="Restart" style="background:rgba(210,153,34,0.1);color:var(--yellow);border-color:rgba(210,153,34,0.3)">↺</button>
+         <button class="btn btn-red" onclick="stopContainer('${c.fullId}','${c.name}')" title="Stop">■</button>
+         ${!isBase ? `<button class="btn btn-red" onclick="deleteContainer('${c.fullId}','${c.name}')">🗑</button>` : ''}`
+      : `<button class="btn btn-green" onclick="startContainer('${c.fullId}','${c.name}')" title="Start">▶</button>
+         ${!isBase ? `<button class="btn btn-red" onclick="deleteContainer('${c.fullId}','${c.name}')">🗑</button>` : ''}`;
+
+    return `
+    <div class="container-row ${status !== 'running' ? 'stopped' : ''}" id="row-${c.id}">
+      <div class="status-dot ${status}"></div>
+      <div>
+        <div class="c-name">${c.name}</div>
+        <div class="c-id">${c.id}</div>
+      </div>
+      <div>${serviceBadge(c.service)}</div>
+      <div>
+        <div class="metric-wrap">
+          <div class="metric-label"><span>CPU</span><span>${cpu.toFixed(1)}%</span></div>
+          <div class="metric-bar"><div class="metric-fill ${barColor(cpu)}" style="width:${Math.min(cpu,100)}%"></div></div>
+        </div>
+      </div>
+      <div>
+        <div class="metric-wrap">
+          <div class="metric-label"><span>MEM</span><span>${memMB}MB</span></div>
+          <div class="metric-bar"><div class="metric-fill ${barColor(memPct)}" style="width:${Math.min(memPct,100)}%"></div></div>
+        </div>
+      </div>
+      <div style="font-family:var(--mono);font-size:11px;color:${status==='running'?'var(--green)':'var(--red)'}">
+        ${status}
+      </div>
+      <div class="actions">${actions}</div>
+    </div>`;
+  }).join('');
+}
+
+// ── Apply live stats to DOM (no re-render) ──
+function applyStatsToDOM() {
+  for (const [id, s] of Object.entries(statsMap)) {
+    const row = document.getElementById(`row-${id}`);
+    if (!row) continue;
+    const bars = row.querySelectorAll('.metric-fill');
+    const labels = row.querySelectorAll('.metric-label span:last-child');
+    if (bars[0]) {
+      bars[0].style.width = Math.min(s.cpu, 100) + '%';
+      bars[0].className = `metric-fill ${barColor(s.cpu)}`;
+      if (labels[0]) labels[0].textContent = s.cpu.toFixed(1) + '%';
+    }
+    if (bars[1]) {
+      bars[1].style.width = Math.min(s.memPct, 100) + '%';
+      bars[1].className = `metric-fill ${barColor(s.memPct)}`;
+      if (labels[1]) labels[1].textContent = s.memMB + 'MB';
+    }
+  }
+}
+
+// ── Actions ─────────────────────────────────
+async function addFrontend() {
+  const btn = document.getElementById('btn-add');
+  btn.disabled = true;
+  btn.textContent = 'Démarrage…';
+  try {
+    const r = await apiFetch('POST', '/api/containers/frontend');
+    toast(`✓ ${r.name} démarré`, 'success');
+    await loadContainers();
+  } catch (e) { toast(e.message, 'error'); }
+  finally { btn.disabled = false; btn.innerHTML = '<span>＋</span> Ajouter frontend'; }
+}
+
+function stopContainer(id, name) {
+  pendingAction = async () => {
+    await apiFetch('POST', `/api/containers/${id}/stop`);
+    toast(`■ ${name} arrêté`, 'success');
+    await loadContainers();
+  };
+  showModal('Arrêter le conteneur', `Arrêter <code style="color:var(--blue)">${name}</code> ?`);
+}
+
+function startContainer(id, name) {
+  apiFetch('POST', `/api/containers/${id}/start`)
+    .then(() => { toast(`▶ ${name} démarré`, 'success'); loadContainers(); })
+    .catch(e => toast(e.message, 'error'));
+}
+
+function restartContainer(id, name) {
+  apiFetch('POST', `/api/containers/${id}/restart`)
+    .then(() => { toast(`↺ ${name} redémarré`, 'success'); loadContainers(); })
+    .catch(e => toast(e.message, 'error'));
+}
+
+function deleteContainer(id, name) {
+  pendingAction = async () => {
+    await apiFetch('DELETE', `/api/containers/${id}`);
+    toast(`🗑 ${name} supprimé`, 'success');
+    await loadContainers();
+  };
+  showModal('Supprimer le conteneur', `Supprimer définitivement <code style="color:var(--red)">${name}</code> ?`);
+}
+
+async function viewLogs(id, name) {
+  logsContainer = name;
+  document.getElementById('logs-title').textContent = `Logs — ${name}`;
+  document.getElementById('logs-panel').classList.add('open');
+  document.getElementById('logs-content').textContent = 'Chargement…';
+  try {
+    const text = await fetch(`/api/logs/${id}`).then(r => r.text());
+    const el = document.getElementById('logs-content');
+    el.textContent = text || '(vide)';
+    el.scrollTop = el.scrollHeight;
+  } catch (e) {
+    document.getElementById('logs-content').textContent = 'Erreur: ' + e.message;
+  }
+}
+
+function closeLogs() {
+  document.getElementById('logs-panel').classList.remove('open');
+}
+
+// ── Modal ────────────────────────────────────
+function showModal(title, body) {
+  document.getElementById('modal-title').textContent = title;
+  document.getElementById('modal-body').innerHTML    = body;
+  document.getElementById('modal-confirm').classList.add('open');
+}
+function closeModal() {
+  document.getElementById('modal-confirm').classList.remove('open');
+  pendingAction = null;
+}
+async function confirmAction() {
+  closeModal();
+  if (pendingAction) {
+    try { await pendingAction(); }
+    catch (e) { toast(e.message, 'error'); }
+  }
+}
+
+// ── Toast ────────────────────────────────────
+function toast(msg, type = 'success') {
+  const wrap = document.getElementById('toast-wrap');
+  const el   = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.innerHTML = `<span>${type === 'success' ? '✓' : '✗'}</span> ${msg}`;
+  wrap.appendChild(el);
+  setTimeout(() => el.remove(), 4000);
+}
+
+// ── Init ─────────────────────────────────────
+connectWS();
+loadContainers();
+setInterval(loadContainers, 10000);
+</script>
+</body>
+</html>
