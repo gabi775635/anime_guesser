@@ -1,220 +1,192 @@
-# Anime Guesser — Guide d'installation
+# AnimeGuesser — Frontend SolidJS
 
-## Prérequis
-
-- PHP >= 8.2
-- Composer
-- Node.js >= 18 + npm
-- MySQL / MariaDB
-- Rust + Cargo (pour Tauri)
+Application de quiz animé construite avec **SolidJS + Vite**, conçue pour tourner dans **Tauri**.
 
 ---
 
-## 1. Backend Laravel
+## Stack technique
+
+| Couche | Techno |
+|--------|--------|
+| UI Framework | SolidJS 1.8 |
+| Routing | @solidjs/router 0.13 |
+| Build | Vite 5 |
+| Desktop | Tauri 1.6 |
+| Styling | CSS custom (variables CSS, pas de framework) |
+| Backend | Laravel (PHP) sur `localhost:8000` |
+
+---
+
+## Structure du projet
+
+```
+animeguesser/
+├── index.html                   Point d'entrée HTML
+├── vite.config.js               Config Vite (port 1420)
+├── package.json
+├── src-tauri/                   Code Tauri (Rust) — inchangé
+└── src/
+    ├── index.jsx                Montage SolidJS
+    ├── App.jsx                  Routeur principal
+    ├── styles.css               CSS global
+    │
+    ├── api/
+    │   └── client.js            Fetch helper avec token Bearer
+    │
+    ├── store/
+    │   └── auth.js              État global user/token (solid-js/store)
+    │
+    ├── utils/
+    │   └── score.js             scoreColor, scoreRank, formatDate…
+    │
+    ├── components/
+    │   ├── AppLayout.jsx        Shell : sidebar + main content
+    │   ├── Sidebar.jsx          Navigation réactive avec guards de rôle
+    │   ├── Modal.jsx            Composant modal générique
+    │   ├── Sparkline.jsx        Graphe en barres (métriques)
+    │   └── ProtectedRoute.jsx   Guards auth / admin / modérateur
+    │
+    └── pages/
+        ├── Auth.jsx             Connexion & inscription
+        ├── Home.jsx             Accueil + choix du mode de jeu
+        ├── Game.jsx             Moteur de jeu complet
+        ├── Leaderboard.jsx      Classement global
+        ├── Profile.jsx          Profil + stats globales + stats par mode
+        ├── ModAnimes.jsx        Gestion des animés (modérateurs)
+        ├── ModReports.jsx       Signalements (modérateurs)
+        ├── AdminUsers.jsx       Gestion des utilisateurs (admin)
+        ├── AdminServer.jsx      Métriques serveur en temps réel (admin)
+        └── AdminStats.jsx       Statistiques joueurs 30 jours (admin)
+```
+
+---
+
+## Installation
+
+### Prérequis
+
+- Node.js 18+
+- Rust + Tauri CLI (`cargo install tauri-cli`)
+- Backend Laravel qui tourne sur `http://localhost:8000`
+
+### Dépendances
 
 ```bash
-# Créer le projet Laravel
-composer create-project laravel/laravel backend
-cd backend
+npm install
+```
 
-# Installer Sanctum (authentification API)
-composer require laravel/sanctum
-php artisan vendor:publish --provider="Laravel\Sanctum\SanctumServiceProvider"
+---
 
-# Configurer .env
+## Lancer le projet
+
+### Développement web seul (sans Tauri)
+
+```bash
+npm run dev
+# Ouvre http://localhost:1420
+```
+
+### Développement complet avec Tauri
+
+```bash
+npm run tauri dev
+# Lance Vite + la fenêtre Tauri en parallèle
+```
+
+### Build de production
+
+```bash
+npm run build          # Build Vite → dist/
+npm run tauri build    # Build Tauri complet (installeur natif)
+```
+
+---
+
+## Backend Laravel
+
+```bash
+# Dans le dossier du backend
+composer install
 cp .env.example .env
-```
-
-Modifier `.env` :
-```env
-APP_URL=http://localhost:8000
-DB_CONNECTION=mysql
-DB_HOST=127.0.0.1
-DB_PORT=3306
-DB_DATABASE=anime_guesser
-DB_USERNAME=root
-DB_PASSWORD=
-
-# CORS (important pour Tauri)
-SANCTUM_STATEFUL_DOMAINS=localhost,localhost:1420,tauri://localhost
-SESSION_DOMAIN=localhost
-```
-
-```bash
-# Générer la clé
 php artisan key:generate
-
-# Copier les fichiers de migration (depuis laravel_migrations_reference.php)
-# Créer chaque fichier séparément dans database/migrations/
-
-# Lancer les migrations
-php artisan migrate
-
-# Copier les controllers (depuis laravel_api_reference.php)
-# dans app/Http/Controllers/
-
-# Copier routes/api.php
-
-# Ajouter le middleware CheckRole dans app/Http/Middleware/
-# L'enregistrer dans bootstrap/app.php
-
-# Démarrer le serveur
-php artisan serve --port=8000
-```
-
-### CORS — config/cors.php
-```php
-return [
-    'paths' => ['api/*'],
-    'allowed_methods' => ['*'],
-    'allowed_origins' => ['*'],
-    'allowed_origins_patterns' => [],
-    'allowed_headers' => ['*'],
-    'exposed_headers' => [],
-    'max_age' => 0,
-    'supports_credentials' => false,
-];
+php artisan migrate          # Inclut la migration best_score
+php artisan serve            # Lance sur http://localhost:8000
 ```
 
 ---
 
-## 2. Base de données (setup rapide)
+## Configuration Tauri
 
-```bash
-# Option A : script standalone PHP (crée tout + seed)
-# php setup.php
+Dans `src-tauri/tauri.conf.json`, vérifie ces champs :
 
-# Option B : migrations + seeders Laravel
-php artisan migrate
-php artisan db:seed
-```
-
----
-
-## 3. Frontend Tauri
-
-```bash
-# Créer le projet Tauri
-npm create tauri-app@latest frontend
-cd frontend
-# Choisir : Vanilla + TypeScript/JavaScript
-
-# Copier index.html dans src/
-cp ../index.html src/index.html
-
-# Configurer tauri.conf.json
-```
-
-`src-tauri/tauri.conf.json` :
 ```json
 {
   "build": {
-    "beforeDevCommand": "",
-    "beforeBuildCommand": "",
     "devUrl": "http://localhost:1420",
-    "frontendDist": "../src"
-  },
-  "app": {
-    "windows": [
-      {
-        "title": "Anime Guesser",
-        "width": 1280,
-        "height": 800,
-        "resizable": true,
-        "fullscreen": false
-      }
-    ],
-    "security": {
-      "csp": null
-    }
-  },
-  "bundle": {
-    "active": true,
-    "targets": "all",
-    "identifier": "com.animeguesser.app",
-    "icon": ["icons/32x32.png", "icons/128x128.png"]
+    "frontendDist": "../dist"
   }
 }
 ```
 
-```bash
-# Lancer en dev
-npm run tauri dev
-
-# Builder pour production
-npm run tauri build
-```
+> Si ton projet utilisait un autre port (ex: 3000), remplace `1420`.
 
 ---
 
-## 4. Structure finale du projet
+## Routing
 
-```
-anime-guesser/
-├── setup.php                    ← Script BDD standalone
-├── backend/                     ← Laravel API
-│   ├── app/Http/Controllers/
-│   │   ├── AuthController.php
-│   │   ├── GameController.php
-│   │   ├── AnimeController.php
-│   │   ├── AdminController.php
-│   │   ├── ModController.php
-│   │   ├── MetricsController.php
-│   │   ├── ProfileController.php
-│   │   └── CharacterController.php
-│   ├── app/Http/Middleware/
-│   │   └── CheckRole.php
-│   ├── app/Models/
-│   │   ├── User.php
-│   │   ├── Anime.php
-│   │   ├── Character.php
-│   │   ├── Round.php
-│   │   ├── GameSession.php
-│   │   └── SessionAnswer.php
-│   ├── database/migrations/     ← 10 fichiers de migration
-│   └── routes/api.php
-└── frontend/                    ← Tauri + Vanilla JS
-    ├── src/
-    │   └── index.html           ← Toute l'interface
-    └── src-tauri/
-        └── tauri.conf.json
-```
+| Route | Page | Accès |
+|-------|------|-------|
+| `/auth` | Connexion / Inscription | Public |
+| `/home` | Accueil | Connecté |
+| `/game` | Jeu (`?mode=screenshot\|description\|portrait`) | Connecté |
+| `/leaderboard` | Classement | Connecté |
+| `/profile` | Profil | Connecté |
+| `/mod/animes` | Gestion des animés | Modérateur+ |
+| `/mod/reports` | Signalements | Modérateur+ |
+| `/admin/users` | Utilisateurs | Admin |
+| `/admin/server` | Métriques serveur | Admin |
+| `/admin/stats` | Statistiques | Admin |
+
+> **Note Tauri :** Si tu rencontres des problèmes de navigation au rechargement, remplace `<Router>` par `<HashRouter>` dans `App.jsx`. Les URLs passeront en `#/home`, `#/game`, etc.
 
 ---
 
-## 5. Comptes de test
+## Système de score
 
-| Pseudo      | Email                       | Mot de passe | Rôle       |
-|-------------|------------------------------|--------------|------------|
-| admin       | admin@animeguesser.local     | Admin1234!   | admin      |
-| moderator1  | mod1@animeguesser.local      | Mod1234!     | modérateur |
-| naruto_fan  | naruto@test.local            | Pass1234!    | joueur     |
+Le score est calculé sur **1000 points** (10 rounds × 100 pts max par round).
+
+| Rang | Score | Couleur |
+|------|-------|---------|
+| S | 900 – 1000 | Vert (`#00d4aa`) |
+| A | 700 – 899 | Bleu (`#4d9fff`) |
+| B | 500 – 699 | Or (`#f5c842`) |
+| C | 300 – 499 | Orange (`#ff8c42`) |
+| D | 0 – 299 | Rouge (`#e8365d`) |
+
+Les points sont calculés côté backend : `max(0, 1000 - temps_ms / 20)`, puis normalisés sur 100 côté frontend.
 
 ---
 
-## 6. Prochaine étape — AniList API
+## État global (store)
 
-Quand tu veux remplacer les données fictives par les vraies :
+```js
+import { authStore, setSession, clearSession, isLoggedIn } from './store/auth';
 
-```php
-// backend/app/Services/AniListService.php
-class AniListService {
-    const API_URL = 'https://graphql.anilist.co';
-    
-    public function searchAnime(string $query): array {
-        $graphql = '{
-            Media(search: "' . $query . '", type: ANIME) {
-                id title { romaji english }
-                description
-                startDate { year }
-                genres
-                episodes
-                coverImage { large }
-            }
-        }';
-        // ... fetch + return
-    }
-}
+authStore.user    // { id, pseudo, role, xp, ... }
+authStore.token   // string | null
+
+setSession(token, user)   // connexion
+clearSession()            // déconnexion
 ```
 
-Demande-moi simplement "intègre l'API AniList" quand tu es prêt.
+Le token est persisté dans `localStorage` (compatible WebView Tauri).
+
+---
+
+## Modifications backend
+
+Deux fichiers Laravel mis à jour (dans le zip `animeguesser-frontend-backend.zip`) :
+
+- **`ProfileController.php`** — `GET /api/profile` retourne maintenant `mode_stats` avec les stats par mode (screenshot, description, portrait).
+- **`GameController.php`** — Score sur 1000 pts explicite, retourne `max_points`, met à jour `best_score` en fin de partie.
+- **Migration** `add_best_score_to_users.php` — Ajoute la colonne `best_score` sur `users`. Lancer avec `php artisan migrate`.
