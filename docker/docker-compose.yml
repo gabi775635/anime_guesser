@@ -1,15 +1,18 @@
 version: "3.9"
 
-# ─────────────────────────────────────────────
-#  AnimeGuesser — Infrastructure Docker
-#  Structure attendue après git pull :
+# ─────────────────────────────────────────────────────────
+#  AnimeGuesser — Infrastructure
 #
-#  monorepo/
-#  ├── docker-compose.yml   ← CE fichier (à la racine)
-#  ├── docker/              ← configs infra
-#  ├── frontend/            ← code SolidJS
-#  └── backend/             ← code Laravel
-# ─────────────────────────────────────────────
+#  Structure du repo :
+#  anime_guesser/
+#  ├── docker-compose.yml   ← CE fichier
+#  ├── docker/              ← configs infra uniquement
+#  ├── frontend/            ← code SolidJS (intact, pas touché)
+#  └── backend/             ← code Laravel  (intact, pas touché)
+#
+#  Rien n'est installé sur la machine hôte.
+#  Node, npm, Composer, PHP → tout tourne dans Docker.
+# ─────────────────────────────────────────────────────────
 
 networks:
   animeguesser:
@@ -20,16 +23,16 @@ volumes:
 
 services:
 
-  # ── BASE DE DONNÉES ───────────────────────
+  # ── BASE DE DONNÉES ─────────────────────────────────────
   db:
     image: mysql:8.0
     container_name: animeguesser-db
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-rootpassword}
-      MYSQL_DATABASE: ${DB_DATABASE:-animeguesser}
-      MYSQL_USER: ${DB_USERNAME:-animeguesser}
-      MYSQL_PASSWORD: ${DB_PASSWORD:-secret}
+      MYSQL_DATABASE:      ${DB_DATABASE:-anime_guesser}
+      MYSQL_USER:          ${DB_USERNAME:-animeguesser}
+      MYSQL_PASSWORD:      ${DB_PASSWORD:-secret}
     volumes:
       - db_data:/var/lib/mysql
     networks:
@@ -38,24 +41,28 @@ services:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
 
-  # ── BACKEND LARAVEL ───────────────────────
+  # ── BACKEND LARAVEL ──────────────────────────────────────
+  # context = ./backend  → racine du projet Laravel
+  # dockerfile séparé dans docker/  → ne pollue pas le projet
   backend:
     build:
-      context: ./backend        # ← dossier Laravel à la racine du repo
+      context: ./backend
       dockerfile: ../docker/backend/Dockerfile
     container_name: animeguesser-backend
     restart: unless-stopped
     environment:
-      APP_ENV: production
-      APP_KEY: ${APP_KEY:-base64:CHANGEME}
-      APP_URL: http://localhost
-      DB_HOST: db
-      DB_PORT: 3306
-      DB_DATABASE: ${DB_DATABASE:-animeguesser}
-      DB_USERNAME: ${DB_USERNAME:-animeguesser}
-      DB_PASSWORD: ${DB_PASSWORD:-secret}
+      APP_ENV:      production
+      APP_KEY:      ${APP_KEY:-base64:7GV2voKTq+KgTL3dyPQKohsRb2f9/v+8asOXsL09Nlg=}
+      APP_DEBUG:    "false"
+      APP_URL:      http://localhost
+      DB_CONNECTION: mysql
+      DB_HOST:      db
+      DB_PORT:      3306
+      DB_DATABASE:  ${DB_DATABASE:-anime_guesser}
+      DB_USERNAME:  ${DB_USERNAME:-animeguesser}
+      DB_PASSWORD:  ${DB_PASSWORD:-secret}
     depends_on:
       db:
         condition: service_healthy
@@ -73,10 +80,10 @@ services:
       - "animeguesser.service=backend"
       - "animeguesser.managed=true"
 
-  # ── FRONTEND 1 ────────────────────────────
+  # ── FRONTEND 1 ───────────────────────────────────────────
   frontend-1:
     build:
-      context: ./frontend       # ← dossier SolidJS à la racine du repo
+      context: ./frontend
       dockerfile: ../docker/frontend/Dockerfile
     container_name: animeguesser-frontend-1
     restart: unless-stopped
@@ -87,7 +94,7 @@ services:
       - "animeguesser.managed=true"
       - "animeguesser.replica=1"
 
-  # ── FRONTEND 2 ────────────────────────────
+  # ── FRONTEND 2 ───────────────────────────────────────────
   frontend-2:
     build:
       context: ./frontend
@@ -101,11 +108,10 @@ services:
       - "animeguesser.managed=true"
       - "animeguesser.replica=2"
 
-  # ── LOAD BALANCER NGINX ───────────────────
+  # ── LOAD BALANCER ────────────────────────────────────────
   nginx-lb:
     build:
       context: ./docker/nginx-lb
-      dockerfile: Dockerfile
     container_name: animeguesser-lb
     restart: unless-stopped
     ports:
@@ -121,11 +127,10 @@ services:
     labels:
       - "animeguesser.service=loadbalancer"
 
-  # ── DASHBOARD DE GESTION ──────────────────
+  # ── DASHBOARD ────────────────────────────────────────────
   dashboard:
     build:
       context: ./docker/dashboard
-      dockerfile: Dockerfile
     container_name: animeguesser-dashboard
     restart: unless-stopped
     ports:
@@ -136,8 +141,8 @@ services:
     networks:
       - animeguesser
     environment:
-      DOCKER_NETWORK: animeguesser
-      LB_CONFIG_PATH: /lb-config/nginx.conf
-      LB_CONTAINER: animeguesser-lb
+      DOCKER_NETWORK:  animeguesser
+      LB_CONFIG_PATH:  /lb-config/nginx.conf
+      LB_CONTAINER:    animeguesser-lb
     labels:
       - "animeguesser.service=dashboard"

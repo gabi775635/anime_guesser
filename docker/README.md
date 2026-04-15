@@ -1,75 +1,69 @@
-# AnimeGuesser — Infrastructure Docker
+# AnimeGuesser — Docker
 
-## Structure du monorepo (après git clone)
+## Structure du repo après git clone
 
 ```
-animeguesser/                  ← racine du repo Git
-├── docker-compose.yml         ← à la racine (pas dans docker/)
-├── docker/                    ← configs infra (ce dossier)
-│   ├── init.sh                ← à lancer une fois après clone
-│   ├── backend/Dockerfile
-│   ├── frontend/Dockerfile
+anime_guesser/
+├── docker-compose.yml      ← à la racine (remplace l'ancien)
+├── docker/                 ← configs infra (ce dossier)
+│   ├── .env.example
+│   ├── backend/Dockerfile  ← Dockerfile Laravel (ne touche pas backend/)
+│   ├── frontend/Dockerfile ← Dockerfile SolidJS (ne touche pas frontend/)
 │   ├── nginx-lb/
 │   └── dashboard/
-├── frontend/                  ← code SolidJS
-│   ├── package.json
-│   ├── src/
-│   └── ...
-└── backend/                   ← code Laravel
-    ├── composer.json
-    ├── app/
-    └── ...
+├── frontend/               ← code SolidJS — intact, rien ajouté
+└── backend/                ← code Laravel  — intact, rien ajouté
 ```
 
-## Démarrage — premier clone
+**Node, npm, Composer, PHP** → tout installé dans Docker. Rien sur ta machine.
+
+---
+
+## Premier lancement
 
 ```bash
-git clone <ton-repo> animeguesser
-cd animeguesser
+git clone <repo> anime_guesser
+cd anime_guesser
 
-# 1. Copie les configs dans les bons endroits
-bash docker/init.sh
+# Copie le docker-compose.yml à la racine
+cp docker/docker-compose.yml ./docker-compose.yml
 
-# 2. Configure les variables d'environnement
+# Variables d'environnement (optionnel, les défauts marchent)
 cp docker/.env.example .env
-# Édite .env si besoin (mots de passe, APP_KEY...)
 
-# 3. Build et démarrage — tout se fait dans Docker
-#    Node, npm, Composer : rien à installer sur ta machine
+# Build + démarrage — tout se fait dans les conteneurs
 docker compose up -d --build
-
-# 4. Migrations Laravel (premier lancement uniquement)
-docker compose exec backend php artisan migrate --seed
 ```
+
+C'est tout. Les migrations Laravel tournent automatiquement au démarrage.
+
+---
 
 ## Après un git pull
 
 ```bash
 git pull
-docker compose up -d --build   # rebuild uniquement ce qui a changé
+docker compose up -d --build
 ```
+
+---
 
 ## Accès
 
-| Service   | URL                   |
-|-----------|-----------------------|
-| App        | http://localhost:80   |
-| Dashboard  | http://localhost:9000 |
+| Service   | URL                    |
+|-----------|------------------------|
+| App       | http://localhost:80    |
+| Dashboard | http://localhost:9000  |
 
-## Ce que Docker gère tout seul
-
-- **npm install** + **npm run build** → dans le conteneur frontend
-- **composer install** → dans le conteneur backend
-- **php artisan config:cache** etc. → au build
-- **Nginx** + **PHP-FPM** + **Queue worker** → via Supervisor dans le backend
+---
 
 ## Commandes utiles
 
 ```bash
-docker compose ps                             # état des services
-docker compose logs -f backend                # logs backend live
-docker compose exec backend php artisan migrate   # migrations
-docker compose up -d --build frontend-1       # rebuild un seul service
-docker compose down                           # tout arrêter
-docker compose down -v                        # tout arrêter + supprimer DB
+docker compose ps                                # état
+docker compose logs -f backend                   # logs Laravel
+docker compose exec backend php artisan migrate  # migrations manuelles
+docker compose up -d --build backend             # rebuild backend seul
+docker compose down                              # arrêt
+docker compose down -v                           # arrêt + suppression DB
 ```
