@@ -1,6 +1,6 @@
 import { authStore } from '../store/auth';
 
-export const API_BASE = 'http://localhost:8000/api';
+export const API_BASE = 'http://localhost:8080/api';
 
 export async function api(method, path, body = null) {
   const opts = {

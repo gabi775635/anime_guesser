@@ -1,25 +1,18 @@
-# ════════════════════════════════════════════════════════
-#  Backend Dockerfile
-#  context = ./backend  (racine du projet Laravel)
-#
-#  Ce Dockerfile est dans docker/backend/Dockerfile
-#  Il n'y a RIEN à ajouter dans le dossier backend/
-#  Composer est installé ici, pas sur la machine hôte
-# ════════════════════════════════════════════════════════
-
 FROM php:8.2-fpm-alpine
 
-# ── Dépendances système ──────────────────────────────────
+# ── Dépendances système ───────────────────────────────────
 RUN apk add --no-cache \
-        nginx \
-        supervisor \
-        mysql-client \
-        libpng-dev \
-        libzip-dev \
-        zip unzip git curl bash
+        nginx supervisor mysql-client \
+        libpng-dev libjpeg-turbo-dev freetype-dev \
+        libzip-dev zip unzip \
+        git curl bash \
+        oniguruma-dev
 
-# ── Extensions PHP pour Laravel ─────────────────────────
-RUN docker-php-ext-install \
+# ── Extensions PHP ────────────────────────────────────────
+RUN docker-php-ext-configure gd \
+        --with-freetype \
+        --with-jpeg \
+    && docker-php-ext-install -j$(nproc) \
         pdo_mysql \
         mbstring \
         exif \
@@ -29,16 +22,28 @@ RUN docker-php-ext-install \
         zip \
         opcache
 
-# ── Composer — copié depuis l'image officielle ───────────
-#    Rien à installer sur la machine hôte
+# ── Composer ──────────────────────────────────────────────
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
-WORKDIR /var/www/html
+# ── Le WORKDIR est le chemin DANS le conteneur ───────────
+#    Peu importe où le code est sur le serveur hôte
+#    Docker copie tout ici au moment du build
+WORKDIR /var/www
 
-# ── Dépendances Composer ─────────────────────────────────
-#    On copie uniquement composer.json d'abord (cache layer)
-#    Si composer.lock absent → composer le génère
-COPY composer.json ./
+# ── Copie tout le code source Laravel ────────────────────
+#    context = ./backend dans docker-compose.yml
+#    donc "." = tout le contenu de ton dossier backend/
+COPY . .
+
+# ── Vérification que le projet Laravel est complet ────────
+RUN if [ ! -f composer.json ]; then \
+        echo "ERREUR : composer.json manquant" && exit 1; \
+    fi && \
+    if [ ! -f public/index.php ]; then \
+        echo "ERREUR : public/index.php manquant — projet Laravel incomplet" && exit 1; \
+    fi
+
+# ── Install des dépendances Composer ─────────────────────
 RUN composer install \
         --no-dev \
         --no-interaction \
@@ -46,10 +51,7 @@ RUN composer install \
         --optimize-autoloader \
     && composer clear-cache
 
-# ── Code source Laravel ──────────────────────────────────
-COPY . .
-
-# ── Setup Laravel ────────────────────────────────────────
+# ── Setup Laravel ─────────────────────────────────────────
 RUN mkdir -p \
         storage/logs \
         storage/framework/cache/data \
@@ -62,11 +64,10 @@ RUN mkdir -p \
     && chown -R www-data:www-data storage bootstrap/cache \
     && chmod -R 775 storage bootstrap/cache
 
-# ── Config Nginx ─────────────────────────────────────────
-#    Inline — rien à copier depuis le projet
+# ── Config Nginx inline ───────────────────────────────────
 RUN printf 'server {\n\
-    listen 8000;\n\
-    root /var/www/html/public;\n\
+    listen 10000;\n\
+    root /var/www/public;\n\
     index index.php;\n\
     client_max_body_size 50M;\n\
     location / { try_files $uri $uri/ /index.php?$query_string; }\n\
@@ -79,7 +80,7 @@ RUN printf 'server {\n\
     location /health { return 200 "ok\\n"; add_header Content-Type text/plain; }\n\
 }\n' > /etc/nginx/http.d/default.conf
 
-# ── Config Supervisor ────────────────────────────────────
+# ── Config Supervisor inline ──────────────────────────────
 RUN mkdir -p /etc/supervisor/conf.d && \
     printf '[supervisord]\n\
 nodaemon=true\n\
@@ -106,7 +107,7 @@ stderr_logfile=/dev/stderr\n\
 stderr_logfile_maxbytes=0\n\
 \n\
 [program:laravel-migrate]\n\
-command=php /var/www/html/artisan migrate --force\n\
+command=php /var/www/artisan migrate --force\n\
 autostart=true\n\
 autorestart=false\n\
 startsecs=0\n\
@@ -115,6 +116,5 @@ stdout_logfile_maxbytes=0\n\
 stderr_logfile=/dev/stderr\n\
 stderr_logfile_maxbytes=0\n' > /etc/supervisor/conf.d/supervisord.conf
 
-EXPOSE 8000
-
+EXPOSE 10000
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
