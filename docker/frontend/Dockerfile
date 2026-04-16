@@ -16,12 +16,12 @@ RUN npm run build
 # Stage 2 : Serve avec Nginx
 FROM nginx:1.25-alpine
 
-# Supprime la config par défaut qui entre en conflit
-RUN rm -f /etc/nginx/conf.d/default.conf /etc/nginx/http.d/default.conf
+# Supprime la config par défaut
+RUN rm -f /etc/nginx/conf.d/default.conf
 
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-# Config SPA dans http.d/
+# Config SPA dans conf.d/ (pas http.d/)
 RUN printf 'server {\n\
     listen 80;\n\
     root /usr/share/nginx/html;\n\
@@ -36,10 +36,10 @@ RUN printf 'server {\n\
         try_files $uri $uri/ /index.html;\n\
     }\n\
     location /health {\n\
-        return 200 "ok\n";\n\
+        return 200 "ok";\n\
         add_header Content-Type text/plain;\n\
     }\n\
-}\n' > /etc/nginx/http.d/default.conf
+}\n' > /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]

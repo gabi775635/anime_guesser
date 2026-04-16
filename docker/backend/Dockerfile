@@ -25,25 +25,17 @@ RUN docker-php-ext-configure gd \
 # ── Composer ──────────────────────────────────────────────
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
-# ── Le WORKDIR est le chemin DANS le conteneur ───────────
-#    Peu importe où le code est sur le serveur hôte
-#    Docker copie tout ici au moment du build
 WORKDIR /var/www
 
-# ── Copie tout le code source Laravel ────────────────────
-#    context = ./backend dans docker-compose.yml
-#    donc "." = tout le contenu de ton dossier backend/
 COPY . .
 
-# ── Vérification que le projet Laravel est complet ────────
 RUN if [ ! -f composer.json ]; then \
         echo "ERREUR : composer.json manquant" && exit 1; \
     fi && \
     if [ ! -f public/index.php ]; then \
-        echo "ERREUR : public/index.php manquant — projet Laravel incomplet" && exit 1; \
+        echo "ERREUR : public/index.php manquant" && exit 1; \
     fi
 
-# ── Install des dépendances Composer ─────────────────────
 RUN composer install \
         --no-dev \
         --no-interaction \
@@ -51,7 +43,6 @@ RUN composer install \
         --optimize-autoloader \
     && composer clear-cache
 
-# ── Setup Laravel ─────────────────────────────────────────
 RUN mkdir -p \
         storage/logs \
         storage/framework/cache/data \
@@ -64,23 +55,28 @@ RUN mkdir -p \
     && chown -R www-data:www-data storage bootstrap/cache \
     && chmod -R 775 storage bootstrap/cache
 
-# ── Config Nginx inline ───────────────────────────────────
+# ── Force PHP-FPM à écouter sur 0.0.0.0:9000 (IPv4 + IPv6) ──
+RUN sed -i 's|listen = 127.0.0.1:9000|listen = 0.0.0.0:9000|' /usr/local/etc/php-fpm.d/www.conf || true && \
+    sed -i 's|listen = 9000|listen = 0.0.0.0:9000|' /usr/local/etc/php-fpm.d/www.conf || true && \
+    sed -i 's|;listen = 9000|listen = 0.0.0.0:9000|' /usr/local/etc/php-fpm.d/www.conf || true
+
+# ── Config Nginx — utilise 0.0.0.0:9000 pour joindre FPM ─
 RUN printf 'server {\n\
     listen 10000;\n\
     root /var/www/public;\n\
     index index.php;\n\
     client_max_body_size 50M;\n\
     location / { try_files $uri $uri/ /index.php?$query_string; }\n\
-    location ~ \\.php$ {\n\
-        fastcgi_pass   127.0.0.1:8000;\n\
+    location ~ \.php$ {\n\
+        fastcgi_pass   0.0.0.0:9000;\n\
         fastcgi_index  index.php;\n\
         fastcgi_param  SCRIPT_FILENAME $realpath_root$fastcgi_script_name;\n\
         include        fastcgi_params;\n\
     }\n\
-    location /health { return 200 "ok\\n"; add_header Content-Type text/plain; }\n\
+    location /health { return 200 "ok"; add_header Content-Type text/plain; }\n\
 }\n' > /etc/nginx/http.d/default.conf
 
-# ── Config Supervisor inline ──────────────────────────────
+# ── Config Supervisor ─────────────────────────────────────
 RUN mkdir -p /etc/supervisor/conf.d && \
     printf '[supervisord]\n\
 nodaemon=true\n\
