@@ -9,9 +9,6 @@ version: "3.9"
 #  ├── docker/              ← configs infra uniquement
 #  ├── frontend/            ← code SolidJS (intact, pas touché)
 #  └── backend/             ← code Laravel  (intact, pas touché)
-#
-#  Rien n'est installé sur la machine hôte.
-#  Node, npm, Composer, PHP → tout tourne dans Docker.
 # ─────────────────────────────────────────────────────────
 
 networks:
@@ -20,7 +17,7 @@ networks:
 
 volumes:
   db_data:
-  backup_data:    # snapshots MySQL persistés indépendamment
+  backup_data:    # snapshots persistés indépendamment
 
 services:
 
@@ -45,8 +42,7 @@ services:
       retries: 10
 
   # ── BACKUP SERVICE ───────────────────────────────────────
-  # Snapshot MySQL tous les jours à 2h00 UTC
-  # Rétention 7 jours — stocké dans le volume backup_data
+  # Snapshot MySQL quotidien à 2h00 UTC, rétention 7 jours
   backup:
     build:
       context: ./docker/backup
@@ -163,7 +159,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./docker/nginx-lb:/lb-config
-      - backup_data:/backups:ro    # lecture seule pour affichage dans le dashboard
+      - backup_data:/backups:ro   # lecture seule pour affichage
     networks:
       - animeguesser
     environment:
