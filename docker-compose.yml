@@ -141,7 +141,7 @@ services:
     networks:
       - animeguesser
     environment:
-      DOCKER_NETWORK:  animeguesser
+      DOCKER_NETWORK:  anime_guesser_animeguesser
       LB_CONFIG_PATH:  /lb-config/nginx.conf
       LB_CONTAINER:    animeguesser-lb
     labels:
