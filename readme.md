@@ -1,158 +1,204 @@
-# AnimeGuesser — Infrastructure Docker
+# AnimeGuesser
 
-## Architecture
-
-```
-Internet
-    │  :80
-    ▼
-┌──────────────┐
-│  Nginx LB    │  round-robin / least_conn
-└──────┬───────┘
-       │                          ┌──────────────────┐
-       ├─── /api/* ──────────────►│ backend:8000     │ Laravel + PHP-FPM
-       │                          │ CPU max 20%       │ Migrations auto
-       │                          │ RAM max 512MB     │
-       │                          └──────────────────┘
-       │
-       ├─── /* ──────────────────►│ frontend-1:80    │
-       │                          │ frontend-2:80    │ SolidJS (Nginx SPA)
-       │                          │ frontend-N:80    │
-       │                          └──────────────────┘
-:9000  │
-┌──────▼───────┐
-│  Dashboard   │  Gestion des conteneurs (WebSocket live)
-└──────┬───────┘
-       └── /var/run/docker.sock
-```
+Jeu de devinette de personnages d'anime — SolidJS + Tauri (web / desktop / Android) + Laravel + MySQL.
 
 ---
 
-## Structure du repo
+## Structure du projet
 
 ```
 anime_guesser/
-├── docker-compose.yml         ← à la racine (fourni dans ce zip)
-├── .env                       ← à créer depuis docker/.env.example
 │
-├── docker/                    ← configs infra (ce dossier)
-│   ├── .env.example
-│   ├── README.md
-│   ├── backend/
-│   │   └── Dockerfile         ← build Laravel, installe Composer, migrations
+├── docker-compose.yml          ← point d'entrée unique
+│
+├── docker/                     ← UNIQUEMENT Dockerfiles + configs infra
+│   ├── backend/Dockerfile
+│   ├── backup/Dockerfile
+│   ├── dashboard/Dockerfile
 │   ├── frontend/
-│   │   └── Dockerfile         ← build SolidJS, installe Node/npm
+│   │   ├── Dockerfile              (web → nginx)
+│   │   └── Dockerfile.release      (Tauri → Desktop + Android)
 │   ├── nginx-lb/
 │   │   ├── Dockerfile
-│   │   └── nginx.conf         ← config LB (modifiée par le dashboard)
-│   └── dashboard/
-│       ├── Dockerfile
-│       ├── package.json
-│       ├── server.js          ← API Express + WebSocket + Dockerode
-│       └── public/index.html  ← interface web
+│   │   └── nginx.conf
+│   └── version-watchdog/Dockerfile
 │
-├── frontend/                  ← code SolidJS — NON MODIFIÉ par Docker
-└── backend/                   ← code Laravel  — NON MODIFIÉ par Docker
+├── frontend/                   ← SolidJS + Tauri
+│   ├── src/
+│   ├── src-tauri/
+│   │   ├── src/main.rs + lib.rs
+│   │   ├── tauri.conf.json
+│   │   ├── Cargo.toml
+│   │   ├── build.rs
+│   │   └── capabilities/default.json
+│   ├── package.json            ← version auto-bump par version-watchdog
+│   └── vite.config.js
+│
+├── backend/                    ← API Laravel
+│
+├── dashboard/                  ← App Node.js gestion infra
+│   ├── server.js
+│   ├── package.json
+│   └── public/index.html
+│
+├── backup/                     ← Scripts snapshot MySQL
+│   ├── backup.sh
+│   └── status.sh
+│
+└── scripts/
+    └── bump-version.sh         ← Versioning automatique
 ```
-
-> Composer, Node, npm, PHP sont installés **dans les conteneurs**.
-> Rien à installer sur ta machine hormis Docker.
 
 ---
 
-## Premier lancement
+## Démarrage rapide
 
 ```bash
-# 1. Clone
-git clone <ton-repo> anime_guesser
-cd anime_guesser
+# 1. Variables d'environnement
+cp .env.example .env
 
-# 2. Place le docker-compose.yml à la racine du repo
-cp docker/docker-compose.yml ./docker-compose.yml
-
-# 3. Variables d'environnement (les défauts fonctionnent tels quels)
-cp docker/.env.example .env
-
-# 4. Build + démarrage
+# 2. Build + démarrage de l'infrastructure
 docker compose up -d --build
+
+# 3. Setup initial (migrations + seed) — une seule fois
+docker compose run --rm setup
+
+# Web   → http://localhost:8080
+# Admin → http://localhost:9000
 ```
 
-Docker se charge automatiquement de :
-- `composer install` dans le conteneur backend
-- `npm ci` + `npm run build` dans le conteneur frontend
-- Les migrations Laravel au démarrage du backend
+> Le service `setup` est idempotent (`migrate` ne rejoue pas ce qui est déjà fait)
+> — tu peux le relancer sans risque après une mise à jour du schéma.
 
 ---
 
-## Après un git pull
+## Services
+
+| Service            | Rôle                                           | Port   |
+|--------------------|------------------------------------------------|--------|
+| `db`               | MySQL 8.0                                      | —      |
+| `backend`          | API Laravel                                    | —      |
+| `frontend-1/2`     | SolidJS buildé, servi par nginx                | —      |
+| `nginx-lb`         | Load balancer + reverse proxy                  | `8080` |
+| `dashboard`        | Dashboard de gestion infra                     | `9000` |
+| `backup`           | Snapshot MySQL quotidien 02:00, rétention 7j   | —      |
+| `version-watchdog` | Bump PATCH auto si le frontend a changé 03:00  | —      |
+
+---
+
+## Build des exécutables Tauri
+
+### Desktop Linux (.AppImage + .deb)
 
 ```bash
-git pull
-docker compose up -d --build
+docker build \
+  -f docker/frontend/Dockerfile.release \
+  --target desktop \
+  -t animeguesser-release-desktop \
+  ./frontend
+
+docker run --rm -v ./releases:/out animeguesser-release-desktop
 ```
 
----
-
-## Accès
-
-| Service      | URL                    |
-|--------------|------------------------|
-| Application  | http://localhost       |
-| API Laravel  | http://localhost/api/  |
-| Dashboard    | http://localhost:9000  |
-
----
-
-## Dashboard (:9000)
-
-- Voir CPU/RAM de chaque conteneur en temps réel (push WebSocket toutes les 3s)
-- Ajouter une instance frontend → LB reconfiguré automatiquement
-- Supprimer une instance dynamique (les 2 de base sont protégées)
-- Stop / Start / Restart sur n'importe quel conteneur
-- Consulter les 100 dernières lignes de logs
-
----
-
-## Limites de ressources (backend)
-
-```yaml
-# docker-compose.yml
-deploy:
-  resources:
-    limits:
-      cpus: "0.20"   # 20% d'un cœur
-      memory: 512M
-```
-
-Pour modifier : édite ces valeurs puis `docker compose up -d --build backend`.
-
----
-
-## Variables d'environnement (.env)
-
-| Variable           | Défaut          |
-|--------------------|-----------------|
-| `LB_PORT`          | `80`            |
-| `DASHBOARD_PORT`   | `9000`          |
-| `DB_ROOT_PASSWORD` | `rootpassword`  |
-| `DB_DATABASE`      | `anime_guesser` |
-| `DB_USERNAME`      | `animeguesser`  |
-| `DB_PASSWORD`      | `secret`        |
-
-La `APP_KEY` Laravel est lue depuis `backend/.env` — pas besoin de la redéfinir.
-
----
-
-## Commandes utiles
+### Android (.apk)
 
 ```bash
-docker compose ps                                 # état de tous les services
-docker compose logs -f backend                    # logs Laravel en live
-docker compose logs -f frontend-1                 # logs frontend en live
-docker compose exec backend php artisan migrate   # migrations manuelles
-docker compose exec backend sh                    # shell dans le backend
-docker compose up -d --build backend              # rebuild backend seul
-docker compose up -d --build frontend-1           # rebuild frontend-1 seul
-docker compose down                               # arrêt
-docker compose down -v                            # arrêt + suppression DB
+docker build \
+  -f docker/frontend/Dockerfile.release \
+  --target android \
+  -t animeguesser-release-android \
+  ./frontend
+
+docker run --rm -v ./releases:/out animeguesser-release-android
 ```
+
+### iOS
+
+Impossible sous Linux — nécessite macOS + Xcode.
+
+```bash
+# En local macOS uniquement
+cd frontend && npm run tauri ios build
+```
+
+### Injecter l'URL serveur au build
+
+```bash
+docker build \
+  --build-arg ANIMEGUESSER_API_URL=https://api.monserveur.com/api \
+  -f docker/frontend/Dockerfile.release \
+  --target desktop \
+  ...
+```
+
+---
+
+## Versioning automatique
+
+`scripts/bump-version.sh` :
+- Hash le contenu de `frontend/src/`
+- Aucune modif → version inchangée
+- Modif → bump PATCH dans `package.json` + `tauri.conf.json`
+
+Déclenché :
+- Au build Tauri (dans `Dockerfile.release`)
+- Chaque nuit à **03:00** par `version-watchdog`
+
+Visible dans l'onglet **Version** du dashboard.
+
+---
+
+## Variables d'environnement
+
+| Variable           | Défaut          | Description                     |
+|--------------------|-----------------|---------------------------------|
+| `DB_ROOT_PASSWORD` | `rootpassword`  | Root MySQL                      |
+| `DB_DATABASE`      | `anime_guesser` | Nom de la base                  |
+| `DB_USERNAME`      | `animeguesser`  | Utilisateur MySQL               |
+| `DB_PASSWORD`      | `secret`        | Mot de passe MySQL              |
+| `APP_KEY`          | (défaut)        | Clé Laravel — regénérer en prod |
+| `LB_PORT`          | `8080`          | Port load balancer              |
+| `DASHBOARD_PORT`   | `9000`          | Port dashboard                  |
+| `DASHBOARD_USER`   | `admin`         | Login dashboard                 |
+| `DASHBOARD_PASS`   | `changeme`      | Mot de passe dashboard          |
+
+---
+
+## Développement local
+
+### Web
+
+```bash
+cd frontend && npm install && npm run dev
+# → http://localhost:1420
+```
+
+### Desktop Tauri
+
+```bash
+cd frontend && npm install && npm run tauri dev
+```
+
+Prérequis : [Rust](https://rustup.rs) + dépendances listées sur [tauri.app/start/prerequisites](https://tauri.app/start/prerequisites/).
+
+### Backend
+
+```bash
+cd backend && composer install
+php artisan migrate --seed
+php artisan serve
+```
+
+---
+
+## Dashboard
+
+`http://localhost:9000` — authentification requise.
+
+| Onglet       | Contenu                                                 |
+|--------------|---------------------------------------------------------|
+| Conteneurs   | Liste, scaling, démarrage/arrêt/restart, logs           |
+| Perf serveur | CPU + mémoire temps réel par conteneur (WebSocket)      |
+| Trafic       | Requêtes/min, codes HTTP, répartition par réplique      |
+| Backups      | Snapshots MySQL, statut, déclenchement manuel           |
+| Version      | Version du frontend, hash source, date du dernier bump  |

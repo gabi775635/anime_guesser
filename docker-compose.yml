@@ -1,0 +1,251 @@
+version: "3.9"
+
+# ─────────────────────────────────────────────────────────
+#  AnimeGuesser — Infrastructure
+#
+#  Structure du repo :
+#  anime_guesser/
+#  ├── docker-compose.yml        ← CE fichier (point d'entrée unique)
+#  ├── docker/                   ← UNIQUEMENT les configs Docker
+#  │   ├── backend/Dockerfile
+#  │   ├── backup/Dockerfile
+#  │   ├── dashboard/Dockerfile
+#  │   ├── frontend/
+#  │   │   ├── Dockerfile            (web — nginx)
+#  │   │   └── Dockerfile.release    (build Tauri : desktop + android)
+#  │   ├── nginx-lb/
+#  │   │   ├── Dockerfile
+#  │   │   └── nginx.conf
+#  │   └── version-watchdog/Dockerfile
+#  ├── dashboard/                ← app Node.js du dashboard
+#  ├── backup/                   ← scripts backup.sh / status.sh
+#  ├── scripts/                  ← scripts partagés (bump-version.sh...)
+#  ├── frontend/                 ← code SolidJS + Tauri
+#  └── backend/                  ← code Laravel
+# ─────────────────────────────────────────────────────────
+
+networks:
+  animeguesser:
+    driver: bridge
+
+volumes:
+  db_data:
+  backup_data:
+  releases:
+
+services:
+
+  # ── BASE DE DONNÉES ─────────────────────────────────────
+  db:
+    image: mysql:8.0
+    container_name: animeguesser-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE:      ${DB_DATABASE:-anime_guesser}
+      MYSQL_USER:          ${DB_USERNAME:-animeguesser}
+      MYSQL_PASSWORD:      ${DB_PASSWORD:-secret}
+    volumes:
+      - db_data:/var/lib/mysql
+    networks:
+      - animeguesser
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ── BACKUP ───────────────────────────────────────────────
+  # Dockerfile : docker/backup/Dockerfile
+  # Scripts    : backup/backup.sh + backup/status.sh
+  backup:
+    build:
+      context: ./backup
+      dockerfile: ../docker/backup/Dockerfile
+    container_name: animeguesser-backup
+    restart: unless-stopped
+    environment:
+      DB_HOST:     db
+      DB_PORT:     3306
+      DB_DATABASE: ${DB_DATABASE:-anime_guesser}
+      DB_USERNAME: ${DB_USERNAME:-animeguesser}
+      DB_PASSWORD: ${DB_PASSWORD:-secret}
+      TZ:          Europe/Paris
+    volumes:
+      - backup_data:/backups
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - animeguesser
+    labels:
+      - "animeguesser.service=backup"
+      - "animeguesser.managed=true"
+
+  # ── SETUP (one-shot) ─────────────────────────────────────
+  # Lance les migrations + seed au premier démarrage, puis s'arrête.
+  # S'exécute uniquement si la DB est vide (idempotent).
+  # Usage : docker compose run --rm setup
+  #         ou automatiquement via : docker compose up --profile setup
+  setup:
+    build:
+      context: ./backend
+      dockerfile: ../docker/backend/Dockerfile
+    container_name: animeguesser-setup
+    profiles: ["setup"]
+    restart: "no"
+    environment:
+      APP_ENV:       production
+      APP_KEY:       ${APP_KEY:-base64:7GV2voKTq+KgTL3dyPQKohsRb2f9/v+8asOXsL09Nlg=}
+      APP_DEBUG:     "false"
+      APP_URL:       http://localhost
+      DB_CONNECTION: mysql
+      DB_HOST:       db
+      DB_PORT:       3306
+      DB_DATABASE:   ${DB_DATABASE:-anime_guesser}
+      DB_USERNAME:   ${DB_USERNAME:-animeguesser}
+      DB_PASSWORD:   ${DB_PASSWORD:-secret}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - animeguesser
+    # Génère la clé si absente, migrate, seed
+    command: >
+      sh -c "
+        echo '── Génération de la clé Laravel ──' &&
+        php artisan key:generate --no-interaction --force &&
+        echo '── Migrations ──' &&
+        php artisan migrate --force --no-interaction &&
+        echo '── Seed ──' &&
+        php artisan db:seed --force --no-interaction &&
+        echo '✓ Setup terminé'
+      "
+
+  # ── BACKEND LARAVEL ──────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: ../docker/backend/Dockerfile
+    container_name: animeguesser-backend
+    restart: unless-stopped
+    environment:
+      APP_ENV:       production
+      APP_KEY:       ${APP_KEY:-base64:7GV2voKTq+KgTL3dyPQKohsRb2f9/v+8asOXsL09Nlg=}
+      APP_DEBUG:     "false"
+      APP_URL:       http://localhost
+      DB_CONNECTION: mysql
+      DB_HOST:       db
+      DB_PORT:       3306
+      DB_DATABASE:   ${DB_DATABASE:-anime_guesser}
+      DB_USERNAME:   ${DB_USERNAME:-animeguesser}
+      DB_PASSWORD:   ${DB_PASSWORD:-secret}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - animeguesser
+    deploy:
+      resources:
+        limits:
+          cpus: "0.20"
+          memory: 512M
+        reservations:
+          cpus: "0.05"
+          memory: 128M
+    labels:
+      - "animeguesser.service=backend"
+      - "animeguesser.managed=true"
+
+  # ── FRONTEND 1 ───────────────────────────────────────────
+  frontend-1:
+    build:
+      context: ./frontend
+      dockerfile: ../docker/frontend/Dockerfile
+    container_name: animeguesser-frontend-1
+    restart: unless-stopped
+    networks:
+      - animeguesser
+    labels:
+      - "animeguesser.service=frontend"
+      - "animeguesser.managed=true"
+      - "animeguesser.replica=1"
+
+  # ── FRONTEND 2 ───────────────────────────────────────────
+  frontend-2:
+    build:
+      context: ./frontend
+      dockerfile: ../docker/frontend/Dockerfile
+    container_name: animeguesser-frontend-2
+    restart: unless-stopped
+    networks:
+      - animeguesser
+    labels:
+      - "animeguesser.service=frontend"
+      - "animeguesser.managed=true"
+      - "animeguesser.replica=2"
+
+  # ── LOAD BALANCER ────────────────────────────────────────
+  nginx-lb:
+    build:
+      context: ./docker/nginx-lb
+    container_name: animeguesser-lb
+    restart: unless-stopped
+    ports:
+      - "${LB_PORT:-8080}:80"
+    depends_on:
+      - frontend-1
+      - frontend-2
+      - backend
+    networks:
+      - animeguesser
+    volumes:
+      - ./docker/nginx-lb/nginx.conf:/etc/nginx/nginx.conf:ro
+    labels:
+      - "animeguesser.service=loadbalancer"
+
+  # ── DASHBOARD ────────────────────────────────────────────
+  # Dockerfile : docker/dashboard/Dockerfile
+  # Sources    : dashboard/ (server.js, package.json, public/)
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: ../docker/dashboard/Dockerfile
+    container_name: animeguesser-dashboard
+    restart: unless-stopped
+    ports:
+      - "${DASHBOARD_PORT:-9000}:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./docker/nginx-lb:/lb-config
+      - backup_data:/backups:ro
+      - ./frontend:/frontend:ro          # lecture seule — pour /api/version
+    networks:
+      - animeguesser
+    environment:
+      DOCKER_NETWORK:  animeguesser
+      LB_CONFIG_PATH:  /lb-config/nginx.conf
+      LB_CONTAINER:    animeguesser-lb
+      DASHBOARD_USER:  ${DASHBOARD_USER:-admin}
+      DASHBOARD_PASS:  ${DASHBOARD_PASS:-changeme}
+    labels:
+      - "animeguesser.service=dashboard"
+
+  # ── VERSION WATCHDOG ─────────────────────────────────────
+  # Vérifie chaque nuit (03:00) si le code frontend a changé.
+  # Si oui  → bump PATCH dans package.json + tauri.conf.json
+  # Si non  → rien
+  # Dockerfile : docker/version-watchdog/Dockerfile
+  # Script     : scripts/bump-version.sh
+  version-watchdog:
+    build:
+      context: ./scripts
+      dockerfile: ../docker/version-watchdog/Dockerfile
+    container_name: animeguesser-version-watchdog
+    restart: unless-stopped
+    volumes:
+      - ./frontend:/app/frontend
+    environment:
+      TZ: Europe/Paris
+    labels:
+      - "animeguesser.service=version-watchdog"
