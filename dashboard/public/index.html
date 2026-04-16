@@ -232,6 +232,7 @@ header { background: var(--bg2); border-bottom: 1px solid var(--border2); paddin
     <div class="nav-tab" onclick="switchTab('perf')">Perf serveur</div>
     <div class="nav-tab" onclick="switchTab('traffic')">Trafic</div>
     <div class="nav-tab" onclick="switchTab('backups')">Backups</div>
+    <div class="nav-tab" onclick="switchTab('crons')">Crons</div>
     <div class="nav-tab" onclick="switchTab('version')">Version</div>
   </div>
 
@@ -346,7 +347,16 @@ header { background: var(--bg2); border-bottom: 1px solid var(--border2); paddin
         <div class="log-box" id="backup-logs">—</div>
       </div>
     </div>
-
+   <!-- CRONS -->
+<div class="section" id="tab-crons">
+  <div class="sec-header">
+    <div class="sec-title">Tâches planifiées</div>
+    <button class="btn btn-ghost" onclick="loadCrons()">↺ Actualiser</button>
+  </div>
+  <div id="crons-list">
+    <div style="color:var(--text3);font-family:var(--mono);font-size:12px">Chargement...</div>
+  </div>
+</div>
   </div>
 </div>
 
@@ -534,7 +544,7 @@ function connectWS() {
 function switchTab(tab) {
   currentTab = tab;
   document.querySelectorAll('.nav-tab').forEach((t, i) => {
-    const tabs = ['containers', 'perf', 'traffic', 'backups', 'version'];
+    const tabs = ['containers', 'perf', 'traffic', 'backups', 'crons', 'version'];
     t.classList.toggle('active', tabs[i] === tab);
   });
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
@@ -543,6 +553,8 @@ function switchTab(tab) {
   if (tab === 'traffic') loadTraffic();
   if (tab === 'backups') loadBackups();
   if (tab === 'version') loadVersion();
+  if (tab === 'crons')   loadCrons();
+if (tab === 'version') loadVersion();
 }
 
 // ── Containers ─────────────────────────────────────────
@@ -879,7 +891,93 @@ async function loadVersion() {
     toast('Version: ' + e.message, 'error');
   }
 }
+// ── Crons ──────────────────────────────────────────────
+async function loadCrons() {
+  const el = document.getElementById('crons-list');
+  if (!el) return;
+  try {
+    const crons = await apiFetch('GET', '/api/crons');
+    el.innerHTML = crons.map(c => {
+      const statusColor = c.running ? 'var(--green)' : 'var(--red)';
+      const statusLabel = c.running ? 'running' : c.status;
+      const lastStatus  = c.lastRun?.last_status ?? null;
+      const lastBadge   = !lastStatus ? ''
+        : lastStatus === 'success'
+          ? `<span class="backup-badge success">✓ Succès</span>`
+          : `<span class="backup-badge error">✗ Erreur</span>`;
 
+      return `
+      <div class="backup-status-card" style="margin-bottom:16px">
+        <div class="backup-status-header">
+          <div style="display:flex;align-items:center;gap:12px">
+            <div class="status-dot" style="background:${statusColor};box-shadow:0 0 6px ${statusColor};width:8px;height:8px;border-radius:50%;flex-shrink:0"></div>
+            <div>
+              <div style="font-family:var(--mono);font-size:13px;font-weight:700">${c.label}</div>
+              <div style="font-family:var(--mono);font-size:11px;color:var(--text3);margin-top:2px">${c.description}</div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            ${lastBadge}
+            <button class="btn btn-blue" style="padding:4px 12px;font-size:11px"
+              onclick="triggerCron('${c.service}', this)">▶ Exécuter</button>
+            <button class="btn btn-ghost" style="padding:4px 10px;font-size:11px"
+              onclick="toggleCronLogs('cron-logs-${c.service}')">Logs</button>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1px;background:var(--border);border-radius:6px;overflow:hidden;margin-bottom:12px">
+          <div style="background:var(--bg3);padding:10px 14px">
+            <div style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">Planification</div>
+            <div style="font-family:var(--mono);font-size:12px;color:var(--blue)">${c.humanSchedule}</div>
+            <div style="font-family:var(--mono);font-size:10px;color:var(--text3);margin-top:2px">${c.schedule}</div>
+          </div>
+          <div style="background:var(--bg3);padding:10px 14px">
+            <div style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">Prochaine exécution</div>
+            <div style="font-family:var(--mono);font-size:12px;color:var(--text1)">
+              ${c.nextRun ? new Date(c.nextRun).toLocaleString('fr-FR', {day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : '—'}
+            </div>
+          </div>
+          <div style="background:var(--bg3);padding:10px 14px">
+            <div style="font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">Dernière exécution</div>
+            <div style="font-family:var(--mono);font-size:12px;color:var(--text1)">
+              ${c.lastRun?.last_backup ? new Date(c.lastRun.last_backup).toLocaleString('fr-FR') : '—'}
+            </div>
+          </div>
+        </div>
+
+        <div style="font-family:var(--mono);font-size:11px;color:${statusColor}">
+          Container : ${c.container} — ${statusLabel}
+        </div>
+
+        <div id="cron-logs-${c.service}" style="display:none;margin-top:12px">
+          <pre class="log-box" style="font-size:11px;max-height:200px;overflow-y:auto">${c.logs || 'Aucun log disponible'}</pre>
+        </div>
+      </div>`;
+    }).join('') || '<div style="color:var(--text3);font-family:var(--mono);font-size:12px">Aucun cron défini</div>';
+  } catch (e) {
+    el.innerHTML = `<div style="color:var(--red);font-family:var(--mono);font-size:12px">Erreur : ${e.message}</div>`;
+  }
+}
+
+function toggleCronLogs(id) {
+  const el = document.getElementById(id);
+  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+async function triggerCron(service, btn) {
+  btn.disabled = true;
+  btn.textContent = '⟳ En cours...';
+  try {
+    const r = await apiFetch('POST', `/api/crons/${service}/trigger`);
+    toast(`✓ ${service} exécuté`, 'success');
+    setTimeout(loadCrons, 500);
+  } catch (e) {
+    toast(`Erreur : ${e.message}`, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '▶ Exécuter';
+  }
+}
 
 </script>
 </body>

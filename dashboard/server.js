@@ -16,8 +16,8 @@ const LB_CONTAINER   = process.env.LB_CONTAINER    || 'animeguesser-lb';
 const LB_CONFIG_PATH = process.env.LB_CONFIG_PATH  || '/lb-config/nginx.conf';
 
 // ── Auth ──────────────────────────────────────────────────
-const DASHBOARD_USER = process.env.DASHBOARD_USER || 'gabi7756';
-const DASHBOARD_PASS = process.env.DASHBOARD_PASS || 'Opus2018!';
+const DASHBOARD_USER =  'gabi7756';
+const DASHBOARD_PASS = 'Opus2018!';
 const sessions = new Map(); // token → expiry
 
 function generateToken() {
