@@ -115,7 +115,7 @@ services:
     container_name: animeguesser-lb
     restart: unless-stopped
     ports:
-      - "${LB_PORT:-8080}:8080"
+      - "${LB_PORT:-8080}:80"
     depends_on:
       - frontend-1
       - frontend-2
