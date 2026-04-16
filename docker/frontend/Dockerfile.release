@@ -1,0 +1,144 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  Dockerfile.release — Build Tauri : Desktop (Linux .AppImage/.deb) + Android
+#
+#  Usage :
+#    docker build -f docker/frontend/Dockerfile.release \
+#                 --target desktop   -t animeguesser-release-desktop   ./frontend
+#    docker build -f docker/frontend/Dockerfile.release \
+#                 --target android   -t animeguesser-release-android   ./frontend
+#
+#  Les artefacts sont déposés dans /out.
+#  Monter un volume sur /out pour les récupérer :
+#    docker run --rm -v ./releases:/out animeguesser-release-desktop
+#
+#  NOTE iOS : le build iOS nécessite macOS + Xcode et ne peut pas tourner
+#  dans un container Linux. Un stub est prévu pour signaler l'erreur clairement.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Stage partagé : dépendances Node + sources ────────────────────────────────
+FROM node:20-bookworm-slim AS base
+
+WORKDIR /app
+
+# Dépendances système communes à Tauri
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl wget git \
+        build-essential pkg-config \
+        libssl-dev libglib2.0-dev \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Rust
+RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain stable
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Dépendances Node du frontend
+COPY package*.json ./
+RUN npm ci --silent
+
+COPY . .
+
+# ── Stage Desktop (Linux) ─────────────────────────────────────────────────────
+FROM base AS desktop
+
+# Dépendances GTK / WebKitGTK pour Tauri desktop Linux
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libgtk-3-dev \
+        libwebkit2gtk-4.1-dev \
+        libayatana-appindicator3-dev \
+        librsvg2-dev \
+        patchelf \
+        libxdo-dev \
+        libxcb-shape0-dev \
+        libxcb-xfixes0-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /out
+
+# Bump de version + build
+# Le script scripts/bump-version.sh gère la logique "si modif → bump patch"
+RUN --mount=type=cache,target=/root/.cargo/registry \
+    --mount=type=cache,target=/app/node_modules/.cache \
+    if [ -f /app/scripts/bump-version.sh ]; then \
+        bash /app/scripts/bump-version.sh; \
+    fi && \
+    npm run tauri build -- --bundles appimage,deb 2>&1
+
+# Copie les artefacts générés dans /out
+RUN find /app/src-tauri/target/release/bundle \
+        -name "*.AppImage" -o \
+        -name "*.deb" \
+    | xargs -I{} cp {} /out/ && \
+    echo "✓ Desktop build OK — artefacts dans /out :"  && \
+    ls -lh /out/
+
+CMD ["ls", "-lh", "/out"]
+
+# ── Stage Android ─────────────────────────────────────────────────────────────
+FROM base AS android
+
+# Android SDK + NDK
+ENV ANDROID_HOME=/opt/android-sdk
+ENV ANDROID_NDK_HOME=/opt/android-sdk/ndk/26.1.10909125
+ENV PATH="${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-tools:${PATH}"
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        openjdk-17-jdk-headless \
+        unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Télécharge les command-line tools Android
+RUN mkdir -p ${ANDROID_HOME}/cmdline-tools && \
+    wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip \
+         -O /tmp/cmdline-tools.zip && \
+    unzip -q /tmp/cmdline-tools.zip -d /tmp/cmdline-tools && \
+    mv /tmp/cmdline-tools/cmdline-tools ${ANDROID_HOME}/cmdline-tools/latest && \
+    rm -f /tmp/cmdline-tools.zip
+
+# Accepte les licences + installe SDK + NDK
+RUN yes | sdkmanager --licenses > /dev/null 2>&1 || true && \
+    sdkmanager \
+        "platform-tools" \
+        "platforms;android-34" \
+        "build-tools;34.0.0" \
+        "ndk;26.1.10909125"
+
+# Target Rust pour Android (ARM64 + ARM32 + x86_64)
+RUN rustup target add \
+        aarch64-linux-android \
+        armv7-linux-androideabi \
+        x86_64-linux-android \
+        i686-linux-android
+
+RUN mkdir -p /out
+
+RUN --mount=type=cache,target=/root/.cargo/registry \
+    --mount=type=cache,target=/app/node_modules/.cache \
+    if [ -f /app/scripts/bump-version.sh ]; then \
+        bash /app/scripts/bump-version.sh; \
+    fi && \
+    npm run tauri android build -- --apk 2>&1
+
+# Copie les .apk dans /out
+RUN find /app/src-tauri/gen/android \
+        -name "*.apk" \
+    | xargs -I{} cp {} /out/ && \
+    echo "✓ Android build OK — artefacts dans /out :" && \
+    ls -lh /out/
+
+CMD ["ls", "-lh", "/out"]
+
+# ── Stage iOS (stub Linux) ────────────────────────────────────────────────────
+FROM base AS ios
+
+# iOS requiert macOS + Xcode — impossible dans un container Linux
+RUN echo "" && \
+    echo "╔══════════════════════════════════════════════════════════════╗" && \
+    echo "║  ⚠  BUILD iOS IMPOSSIBLE SOUS LINUX                         ║" && \
+    echo "║                                                              ║" && \
+    echo "║  Tauri iOS nécessite macOS + Xcode.                         ║" && \
+    echo "║  Utilisez GitHub Actions avec runner macos-latest :          ║" && \
+    echo "║    .github/workflows/release-ios.yml                         ║" && \
+    echo "╚══════════════════════════════════════════════════════════════╝" && \
+    echo "" && \
+    exit 1

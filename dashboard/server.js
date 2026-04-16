@@ -492,6 +492,27 @@ app.get('/api/backups', requireAuth, (req, res) => {
   }
 });
 
+// ── API: Version frontend ─────────────────────────────
+// Lit le package.json du frontend (monté via volume) pour exposer la version courante
+const FRONTEND_PKG  = process.env.FRONTEND_PKG  || '/frontend/package.json';
+const FRONTEND_HASH = process.env.FRONTEND_HASH || '/frontend/.version-hash';
+
+app.get('/api/version', requireAuth, (req, res) => {
+  try {
+    const pkg     = JSON.parse(fs.readFileSync(FRONTEND_PKG, 'utf8'));
+    const version = pkg.version || '0.0.0';
+    let lastHash  = null;
+    let lastBump  = null;
+    try {
+      lastHash = fs.readFileSync(FRONTEND_HASH, 'utf8').trim().slice(0, 12);
+      lastBump = fs.statSync(FRONTEND_HASH).mtime.toISOString();
+    } catch { /* pas encore de bump effectué */ }
+    res.json({ version, lastHash, lastBump });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // POST /api/backups/now — déclenche un backup manuel
 app.post('/api/backups/now', requireAuth, async (req, res) => {
   try {
