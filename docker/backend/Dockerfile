@@ -29,6 +29,9 @@ WORKDIR /var/www
 
 COPY . .
 
+# Supprime le .env local — les variables viennent de docker-compose
+RUN rm -f .env
+
 RUN if [ ! -f composer.json ]; then \
         echo "ERREUR : composer.json manquant" && exit 1; \
     fi && \
@@ -43,32 +46,30 @@ RUN composer install \
         --optimize-autoloader \
     && composer clear-cache
 
+# Crée les dossiers nécessaires sans faire config:cache au build
+# (config:cache nécessite une DB connectée, on le fait au démarrage)
 RUN mkdir -p \
         storage/logs \
         storage/framework/cache/data \
         storage/framework/sessions \
         storage/framework/views \
         bootstrap/cache \
-    && php artisan config:cache \
-    && php artisan route:cache \
-    && php artisan view:cache \
     && chown -R www-data:www-data storage bootstrap/cache \
     && chmod -R 775 storage bootstrap/cache
 
-# ── Force PHP-FPM à écouter sur 0.0.0.0:9000 (IPv4 + IPv6) ──
-RUN sed -i 's|listen = 127.0.0.1:9000|listen = 0.0.0.0:9000|' /usr/local/etc/php-fpm.d/www.conf || true && \
-    sed -i 's|listen = 9000|listen = 0.0.0.0:9000|' /usr/local/etc/php-fpm.d/www.conf || true && \
-    sed -i 's|;listen = 9000|listen = 0.0.0.0:9000|' /usr/local/etc/php-fpm.d/www.conf || true
+# ── Force PHP-FPM sur 127.0.0.1:9000 ─────────────────────
+# On remplace la config pour écouter sur toutes interfaces
+RUN echo "listen = 127.0.0.1:9000" >> /usr/local/etc/php-fpm.d/zz-docker.conf
 
-# ── Config Nginx — utilise 0.0.0.0:9000 pour joindre FPM ─
+# ── Config Nginx ──────────────────────────────────────────
 RUN printf 'server {\n\
     listen 10000;\n\
     root /var/www/public;\n\
     index index.php;\n\
     client_max_body_size 50M;\n\
     location / { try_files $uri $uri/ /index.php?$query_string; }\n\
-    location ~ \.php$ {\n\
-        fastcgi_pass   0.0.0.0:9000;\n\
+    location ~ \\.php$ {\n\
+        fastcgi_pass   127.0.0.1:9000;\n\
         fastcgi_index  index.php;\n\
         fastcgi_param  SCRIPT_FILENAME $realpath_root$fastcgi_script_name;\n\
         include        fastcgi_params;\n\
@@ -77,6 +78,8 @@ RUN printf 'server {\n\
 }\n' > /etc/nginx/http.d/default.conf
 
 # ── Config Supervisor ─────────────────────────────────────
+# php-fpm démarre en premier, nginx après
+# laravel-setup fait config:cache + migrate au démarrage (DB dispo)
 RUN mkdir -p /etc/supervisor/conf.d && \
     printf '[supervisord]\n\
 nodaemon=true\n\
@@ -84,29 +87,32 @@ logfile=/dev/null\n\
 logfile_maxbytes=0\n\
 pidfile=/var/run/supervisord.pid\n\
 \n\
-[program:nginx]\n\
-command=nginx -g "daemon off;"\n\
-autostart=true\n\
-autorestart=true\n\
-stdout_logfile=/dev/stdout\n\
-stdout_logfile_maxbytes=0\n\
-stderr_logfile=/dev/stderr\n\
-stderr_logfile_maxbytes=0\n\
-\n\
 [program:php-fpm]\n\
 command=php-fpm -F\n\
 autostart=true\n\
 autorestart=true\n\
+priority=1\n\
 stdout_logfile=/dev/stdout\n\
 stdout_logfile_maxbytes=0\n\
 stderr_logfile=/dev/stderr\n\
 stderr_logfile_maxbytes=0\n\
 \n\
-[program:laravel-migrate]\n\
-command=php /var/www/artisan migrate --force\n\
+[program:nginx]\n\
+command=nginx -g "daemon off;"\n\
+autostart=true\n\
+autorestart=true\n\
+priority=2\n\
+stdout_logfile=/dev/stdout\n\
+stdout_logfile_maxbytes=0\n\
+stderr_logfile=/dev/stderr\n\
+stderr_logfile_maxbytes=0\n\
+\n\
+[program:laravel-setup]\n\
+command=/bin/sh -c "sleep 2 && php /var/www/artisan config:cache && php /var/www/artisan route:cache && php /var/www/artisan migrate --force"\n\
 autostart=true\n\
 autorestart=false\n\
 startsecs=0\n\
+priority=10\n\
 stdout_logfile=/dev/stdout\n\
 stdout_logfile_maxbytes=0\n\
 stderr_logfile=/dev/stderr\n\
