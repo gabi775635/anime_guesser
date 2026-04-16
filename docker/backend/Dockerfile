@@ -72,7 +72,7 @@ RUN printf 'server {\n\
     client_max_body_size 50M;\n\
     location / { try_files $uri $uri/ /index.php?$query_string; }\n\
     location ~ \\.php$ {\n\
-        fastcgi_pass   127.0.0.1:9000;\n\
+        fastcgi_pass   127.0.0.1:8000;\n\
         fastcgi_index  index.php;\n\
         fastcgi_param  SCRIPT_FILENAME $realpath_root$fastcgi_script_name;\n\
         include        fastcgi_params;\n\
@@ -116,5 +116,5 @@ stdout_logfile_maxbytes=0\n\
 stderr_logfile=/dev/stderr\n\
 stderr_logfile_maxbytes=0\n' > /etc/supervisor/conf.d/supervisord.conf
 
-EXPOSE 10000
+EXPOSE 8000
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]

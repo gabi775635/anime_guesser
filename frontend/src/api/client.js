@@ -1,6 +1,13 @@
 import { authStore } from '../store/auth';
 
-export const API_BASE = 'http://localhost:8080/api';
+// En prod : pointe vers l'IP/domaine du serveur
+// En dev local : pointe vers localhost
+const isProd = !window.location.hostname.includes('localhost') && 
+               !window.location.hostname.includes('127.0.0.1');
+
+export const API_BASE = isProd
+  ? `${window.location.protocol}//${window.location.host}/api`
+  : 'http://localhost:8080/api';
 
 export async function api(method, path, body = null) {
   const opts = {
