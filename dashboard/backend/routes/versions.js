@@ -4,17 +4,17 @@ const router  = express.Router();
 const fs      = require('fs');
 const path    = require('path');
 const { requireAuth } = require('../middleware/auth');
+const { docker }      = require('../services/docker');
 
-const RELEASES_DIR = process.env.RELEASES_DIR || '/releases';
-const VERSIONS_DB  = process.env.VERSIONS_DB  || '/releases/versions.json';
+const RELEASES_DIR      = process.env.RELEASES_DIR      || '/releases';
+const VERSIONS_DB       = process.env.VERSIONS_DB       || '/releases/versions.json';
+const VERSION_CONTAINER = process.env.VERSION_CONTAINER || 'animeguesser_version_server';
 
 function loadVersionsDb() {
-  // Essaie le JSON d'abord
   if (fs.existsSync(VERSIONS_DB)) {
     try { return JSON.parse(fs.readFileSync(VERSIONS_DB, 'utf8')); } catch {}
   }
 
-  // Fallback : scan du dossier releases pour construire la liste
   const versions = [];
   if (!fs.existsSync(RELEASES_DIR)) return { versions };
 
@@ -22,7 +22,6 @@ function loadVersionsDb() {
     ['.apk', '.exe', '.dmg', '.deb', '.AppImage', '.zip'].some(ext => f.endsWith(ext))
   );
 
-  // Groupe par version (extrait depuis le nom du fichier ex: animeguesser-1.2.3-android-arm64.apk)
   const byVersion = {};
   files.forEach(f => {
     const stat = fs.statSync(path.join(RELEASES_DIR, f));
@@ -62,7 +61,7 @@ router.get('/latest', requireAuth, (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// GET /api/versions/logs — logs du version-server
+// GET /api/versions/logs
 router.get('/logs', requireAuth, (req, res) => {
   try {
     const logFile = '/var/log/version-server.log';
@@ -70,6 +69,55 @@ router.get('/logs', requireAuth, (req, res) => {
     const lines = fs.readFileSync(logFile, 'utf8').split('\n').slice(-100).join('\n');
     res.type('text/plain').send(lines);
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/versions/build — Lance build-release.sh dans le container version-server
+router.post('/build', requireAuth, async (req, res) => {
+  try {
+    const container = docker.getContainer(VERSION_CONTAINER);
+
+    // Vérifie que le container tourne
+    const info = await container.inspect();
+    if (!info.State.Running) {
+      return res.status(400).json({ success: false, error: 'Le container version-server n\'est pas démarré.' });
+    }
+
+    const exec   = await container.exec({
+      Cmd: ['/usr/local/bin/build-release.sh'],
+      AttachStdout: true,
+      AttachStderr: true,
+    });
+    const stream = await exec.start({ hijack: true, stdin: false });
+
+    let output = '';
+    stream.on('data', chunk => {
+      // Retire le header de 8 bytes Docker multiplexing
+      const text = chunk.length > 8 ? chunk.slice(8).toString('utf8') : chunk.toString('utf8');
+      output += text;
+    });
+
+    stream.on('end', async () => {
+      // Vérifie le code de sortie
+      try {
+        const inspect = await exec.inspect();
+        const exitCode = inspect.ExitCode;
+        if (exitCode === 0) {
+          res.json({ success: true, output: output.slice(-2000) });
+        } else {
+          res.json({ success: false, error: `Exit code ${exitCode}`, output: output.slice(-2000) });
+        }
+      } catch {
+        res.json({ success: true, output: output.slice(-2000) });
+      }
+    });
+
+    stream.on('error', err => {
+      res.status(500).json({ success: false, error: err.message });
+    });
+
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 // GET /api/versions/download/:filename

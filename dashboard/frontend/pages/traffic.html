@@ -4,6 +4,75 @@
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Trafic — Dashboard AnimeGuesser</title>
   <link rel="stylesheet" href="/shared/style.css">
+  <style>
+    .status-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .s2xx { background: rgba(34,197,94,.15);  color: var(--ok);   }
+    .s3xx { background: rgba(245,158,11,.15); color: var(--warn); }
+    .s4xx { background: rgba(239,68,68,.15);  color: var(--err);  }
+    .s5xx { background: rgba(239,68,68,.25);  color: #ff8080;     }
+
+    .filter-bar {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+      align-items: center;
+    }
+    .filter-bar input {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 7px 12px;
+      font-size: 13px;
+      flex: 1;
+      min-width: 180px;
+      outline: none;
+    }
+    .filter-bar input:focus { border-color: var(--accent); }
+    .filter-btn {
+      padding: 6px 14px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      background: var(--bg2);
+      color: var(--text-muted);
+      font-size: 12px;
+      cursor: pointer;
+      transition: all .15s;
+      white-space: nowrap;
+    }
+    .filter-btn:hover { border-color: var(--accent); color: var(--text); }
+    .filter-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+    .req-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .req-table th { text-align:left; padding: 8px 10px; color: var(--text-muted); font-weight:500; border-bottom: 1px solid var(--border); font-size:11px; text-transform:uppercase; letter-spacing:.5px; }
+    .req-table td { padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,.04); vertical-align: middle; }
+    .req-table tr:last-child td { border-bottom: none; }
+    .req-table tr:hover td { background: var(--bg3); }
+
+    .method-badge {
+      display: inline-block;
+      padding: 1px 7px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 700;
+      font-family: monospace;
+    }
+    .m-get    { background: rgba(59,130,246,.2); color: #93c5fd; }
+    .m-post   { background: rgba(34,197,94,.2);  color: #86efac; }
+    .m-put    { background: rgba(245,158,11,.2); color: #fcd34d; }
+    .m-delete { background: rgba(239,68,68,.2);  color: #fca5a5; }
+    .m-other  { background: rgba(139,92,246,.2); color: #c4b5fd; }
+
+    .empty-state { text-align:center; padding: 40px; color: var(--text-muted); }
+    .count-label { font-size:12px; color: var(--text-muted); }
+  </style>
 </head>
 <body>
 <script src="/shared/api.js"></script>
@@ -11,27 +80,97 @@
 <script>
   injectLayout('Trafic & Requêtes', 'traffic');
 
+  let allRequests = [];
+  let activeFilter = 'all';
+  let searchQuery  = '';
+
+  function getStatusClass(code) {
+    if (code < 300) return 's2xx';
+    if (code < 400) return 's3xx';
+    if (code < 500) return 's4xx';
+    return 's5xx';
+  }
+  function getStatusGroup(code) {
+    if (code < 300) return '2xx';
+    if (code < 400) return '3xx';
+    if (code < 500) return '4xx';
+    return '5xx';
+  }
+  function getMethodClass(m) {
+    const map = { GET:'m-get', POST:'m-post', PUT:'m-put', DELETE:'m-delete' };
+    return map[m?.toUpperCase()] || 'm-other';
+  }
+
+  function renderTable() {
+    const tbody = document.getElementById('req-tbody');
+    const countEl = document.getElementById('req-count');
+    if (!tbody) return;
+
+    const q = searchQuery.toLowerCase();
+    const filtered = allRequests.filter(r => {
+      const group = getStatusGroup(r.status);
+      if (activeFilter !== 'all' && group !== activeFilter) return false;
+      if (q) {
+        return (r.path||'').toLowerCase().includes(q)
+          || (r.method||'').toLowerCase().includes(q)
+          || (r.ip||'').toLowerCase().includes(q)
+          || String(r.status).includes(q)
+          || (r.container||'').toLowerCase().includes(q);
+      }
+      return true;
+    });
+
+    countEl.textContent = `${filtered.length} requête(s) affichée(s)`;
+
+    if (!filtered.length) {
+      tbody.innerHTML = `<tr><td colspan="6" class="empty-state">Aucune requête ne correspond aux filtres.</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = filtered.map(r => `
+      <tr>
+        <td style="font-size:11px;color:var(--text-muted);white-space:nowrap">${r.time||'—'}</td>
+        <td><span class="method-badge ${getMethodClass(r.method)}">${r.method||'?'}</span></td>
+        <td style="font-family:monospace;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(r.path||'')}">${escHtml(r.path||'—')}</td>
+        <td><span class="status-badge ${getStatusClass(r.status)}">${r.status}</span></td>
+        <td style="color:var(--text-muted);font-size:12px">${r.container||r.ip||'—'}</td>
+        <td style="color:var(--text-muted);font-size:12px;white-space:nowrap">${r.size||'—'}</td>
+      </tr>
+    `).join('');
+  }
+
+  function setFilter(f) {
+    activeFilter = f;
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.toggle('active', b.dataset.filter === f));
+    renderTable();
+  }
+
   async function loadTraffic() {
     const pc = document.getElementById('page-content');
     pc.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
     try {
-      const d = await api.traffic();
+      const d  = await api.traffic();
       const sc = d.statusCount || {};
       const ot = d.requestsOverTime || [];
       const hits = d.containerHits || {};
       const max = Math.max(...ot.map(x=>x.count), 1);
+      allRequests = d.requests || [];
 
       pc.innerHTML = `
         <div class="flex items-center gap-8 mb-16" style="justify-content:flex-end">
           <button class="btn btn-ghost btn-sm" onclick="loadTraffic()">↻ Rafraîchir</button>
         </div>
+
+        <!-- Stat cards -->
         <div class="cards-grid mb-16">
           <div class="card stat-card"><div class="stat-value">${d.totalRequests}</div><div class="stat-label">Requêtes</div></div>
-          <div class="card stat-card"><div class="stat-value text-ok">${sc['2xx']||0}</div><div class="stat-label">2xx</div></div>
-          <div class="card stat-card"><div class="stat-value text-warn">${sc['3xx']||0}</div><div class="stat-label">3xx</div></div>
-          <div class="card stat-card"><div class="stat-value text-err">${(sc['4xx']||0)+(sc['5xx']||0)}</div><div class="stat-label">Erreurs</div></div>
+          <div class="card stat-card"><div class="stat-value text-ok">${sc['2xx']||0}</div><div class="stat-label">2xx Succès</div></div>
+          <div class="card stat-card"><div class="stat-value text-warn">${sc['3xx']||0}</div><div class="stat-label">3xx Redirect</div></div>
+          <div class="card stat-card"><div class="stat-value text-err">${(sc['4xx']||0)+(sc['5xx']||0)}</div><div class="stat-label">Erreurs 4xx/5xx</div></div>
         </div>
-        <div class="cards-grid-2">
+
+        <!-- Graphiques -->
+        <div class="cards-grid-2 mb-16">
           <div class="card">
             <div class="card-header"><span class="card-title">Par conteneur</span></div>
             <table><thead><tr><th>Conteneur</th><th>Requêtes</th><th>%</th></tr></thead>
@@ -50,7 +189,35 @@
               ${ot.map(d=>`<div title="${d.time}: ${d.count}" style="flex:1;background:var(--accent);border-radius:3px 3px 0 0;height:${Math.max(4,Math.round(d.count/max*190))}px;opacity:.8"></div>`).join('')}
             </div>
           </div>
+        </div>
+
+        <!-- Table des requêtes -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">📋 Détail des requêtes</span>
+            <span id="req-count" class="count-label"></span>
+          </div>
+          <div style="padding: 12px 16px 0">
+            <div class="filter-bar">
+              <input type="text" placeholder="🔍 Rechercher par path, IP, méthode, statut…" id="search-input" oninput="searchQuery=this.value;renderTable()">
+              <button class="filter-btn active" data-filter="all"    onclick="setFilter('all')">Tout</button>
+              <button class="filter-btn"        data-filter="2xx"    onclick="setFilter('2xx')">✅ 2xx</button>
+              <button class="filter-btn"        data-filter="3xx"    onclick="setFilter('3xx')">↪ 3xx</button>
+              <button class="filter-btn"        data-filter="4xx"    onclick="setFilter('4xx')">⚠️ 4xx</button>
+              <button class="filter-btn"        data-filter="5xx"    onclick="setFilter('5xx')">❌ 5xx</button>
+            </div>
+          </div>
+          <div style="overflow-x:auto">
+            <table class="req-table">
+              <thead><tr>
+                <th>Heure</th><th>Méthode</th><th>Path</th><th>Statut</th><th>Conteneur</th><th>Taille</th>
+              </tr></thead>
+              <tbody id="req-tbody"></tbody>
+            </table>
+          </div>
         </div>`;
+
+      renderTable();
     } catch(e) {
       pc.innerHTML = `<div class="alert alert-err">Erreur : ${e.message}</div>`;
     }

@@ -8,6 +8,57 @@
     .version-card { border:1px solid var(--border); border-radius:var(--radius); padding:18px; margin-bottom:14px; background:var(--bg2); }
     .version-card.latest { border-color:var(--accent); }
     .version-num { font-size:22px; font-weight:700; color:var(--accent2); }
+
+    .build-panel {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px;
+      margin-bottom: 20px;
+    }
+    .build-panel-title {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .build-status {
+      font-size: 13px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      margin-top: 12px;
+      display: none;
+    }
+    .build-status.running  { display:block; background: rgba(59,130,246,.15); color: var(--info); border: 1px solid rgba(59,130,246,.3); }
+    .build-status.success  { display:block; background: rgba(34,197,94,.12); color: var(--ok); border: 1px solid rgba(34,197,94,.3); }
+    .build-status.error    { display:block; background: rgba(239,68,68,.12); color: var(--err); border: 1px solid rgba(239,68,68,.3); }
+    .build-log-box {
+      margin-top: 10px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-family: monospace;
+      font-size: 12px;
+      max-height: 200px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+      display: none;
+    }
+    .spinner-inline {
+      display: inline-block;
+      width: 14px; height: 14px;
+      border: 2px solid currentColor;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
@@ -16,6 +67,53 @@
 <script>
   injectLayout('Versions & Releases', 'versions');
 
+  // ── Lancement manuel du build ──────────────────────────────────────────────
+  async function triggerBuild() {
+    const btn    = document.getElementById('build-btn');
+    const status = document.getElementById('build-status');
+    const logBox = document.getElementById('build-log-box');
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-inline"></span> Build en cours…';
+    status.className = 'build-status running';
+    status.innerHTML = '<span class="spinner-inline"></span> Compilation lancée — cela peut prendre 15-30 min selon la plateforme…';
+    logBox.style.display = 'none';
+
+    try {
+      const token = localStorage.getItem('dashboard_token');
+      const res   = await fetch('/api/versions/build', {
+        method: 'POST',
+        headers: { 'x-dashboard-token': token }
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        status.className = 'build-status success';
+        status.textContent = '✅ Build terminé avec succès.';
+        if (data.output) {
+          logBox.style.display = 'block';
+          logBox.textContent = data.output;
+          logBox.scrollTop = logBox.scrollHeight;
+        }
+        setTimeout(() => loadVersions(), 1500);
+      } else {
+        status.className = 'build-status error';
+        status.textContent = '❌ Erreur : ' + (data.error || 'inconnue');
+        if (data.output) {
+          logBox.style.display = 'block';
+          logBox.textContent = data.output;
+        }
+      }
+    } catch (e) {
+      status.className = 'build-status error';
+      status.textContent = '❌ Requête échouée : ' + e.message;
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '▶ Lancer un build';
+    }
+  }
+
+  // ── Chargement des versions ────────────────────────────────────────────────
   async function loadVersions() {
     const pc = document.getElementById('page-content');
     pc.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
@@ -29,6 +127,17 @@
       const icons = { android:'🤖', ios:'🍎', windows:'🪟', linux:'🐧', macos:'🍎', desktop:'🖥️', unknown:'📦' };
 
       let html = `
+        <!-- ── Panneau de build manuel ── -->
+        <div class="build-panel">
+          <div class="build-panel-title">🔨 Build manuel</div>
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <button id="build-btn" class="btn btn-primary" onclick="triggerBuild()">▶ Lancer un build</button>
+            <span class="text-muted" style="font-size:12px">Génère Android APK · Linux AppImage/deb · Windows exe/msi</span>
+          </div>
+          <div id="build-status" class="build-status"></div>
+          <div id="build-log-box" class="build-log-box"></div>
+        </div>
+
         <div class="flex items-center gap-8 mb-16" style="justify-content:space-between">
           <span class="text-muted">${versions.length} version(s) disponible(s)</span>
           <button class="btn btn-ghost btn-sm" onclick="loadVersions()">↻ Rafraîchir</button>
@@ -37,8 +146,7 @@
       if (!versions.length) {
         html += `<div class="alert alert-warn mb-16">
           Aucune release trouvée dans <code>/releases</code>.<br>
-          Le build se déclenche chaque nuit à 03h30 via le <strong>version-server</strong>,
-          ou manuellement : <code>docker exec animeguesser_version_server build-release.sh</code>
+          Cliquez sur <strong>Lancer un build</strong> ci-dessus ou attendez le cron de 03h30.
         </div>`;
       } else {
         const sorted = [...versions].sort((a,b) => {
