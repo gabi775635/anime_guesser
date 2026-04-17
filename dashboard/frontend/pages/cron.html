@@ -5,7 +5,9 @@
   <title>Cron — Dashboard AnimeGuesser</title>
   <link rel="stylesheet" href="/shared/style.css">
   <style>
-    .cron-entry { font-family:monospace; background:var(--bg3); border-radius:6px; padding:8px 12px; margin-bottom:6px; font-size:12px; color:var(--accent2); }
+    .cron-entry { font-family:monospace; background:var(--bg3); border-radius:6px; padding:10px 14px; margin-bottom:6px; font-size:12px; color:var(--accent2); display:flex; gap:12px; align-items:flex-start; }
+    .cron-schedule { min-width:160px; color:var(--ok); flex-shrink:0; }
+    .cron-cmd { color:var(--text); word-break:break-all; }
   </style>
 </head>
 <body>
@@ -14,44 +16,71 @@
 <script>
   injectLayout('Planificateur Cron', 'cron');
 
+  function parseCronLine(line) {
+    // Extrait la partie schedule (5 champs) et la commande
+    const parts = line.trim().split(/\s+/);
+    if (parts.length >= 6) {
+      return { schedule: parts.slice(0,5).join(' '), cmd: parts.slice(5).join(' ') };
+    }
+    return { schedule: '', cmd: line };
+  }
+
   async function loadCron() {
     const pc = document.getElementById('page-content');
-    pc.innerHTML = '<div class="loading-state"><div class="spinner"></div><p class="mt-8">Lecture des crontabs…</p></div>';
+    pc.innerHTML = '<div class="loading-state"><div class="spinner"></div><p class="mt-8">Lecture des crontabs dans chaque conteneur…</p></div>';
     try {
       const data = await api.cronAll();
+
       let html = `<div class="flex items-center gap-8 mb-16" style="justify-content:space-between">
-        <span class="text-muted">${data.withCron.length} conteneur(s) avec cron</span>
+        <span class="text-muted">${data.withCron.length} conteneur(s) avec cron actif</span>
         <button class="btn btn-ghost btn-sm" onclick="loadCron()">↻ Rafraîchir</button>
       </div>`;
 
-      if (!data.withCron.length) html += '<div class="alert alert-warn">Aucun conteneur avec crontab active.</div>';
+      if (!data.withCron.length) {
+        html += '<div class="alert alert-warn">Aucun conteneur running n\'a de crontab configurée.</div>';
+      }
 
       data.withCron.forEach(c => {
+        const entries = c.entries.map(e => {
+          const { schedule, cmd } = parseCronLine(e);
+          return `<div class="cron-entry">
+            <span class="cron-schedule">${escHtml(schedule)}</span>
+            <span class="cron-cmd">${escHtml(cmd)}</span>
+          </div>`;
+        }).join('');
+
         html += `<div class="card mb-16">
           <div class="card-header">
-            <h3 style="font-weight:600">
+            <span style="font-weight:600">
               <a href="/pages/container-detail.html?id=${c.id}" style="color:var(--accent2)">${c.name}</a>
               <span class="badge badge-info" style="margin-left:8px">${c.service}</span>
-            </h3>
+            </span>
+            <span class="text-muted" style="font-size:12px">${c.entries.length} tâche(s)</span>
           </div>
-          <div class="cards-grid-2">
-            <div>
-              <p class="text-muted mb-16" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Entrées</p>
-              ${c.entries.map(e=>`<div class="cron-entry">${escHtml(e)}</div>`).join('')}
+
+          <div class="mb-16">
+            <p class="text-muted mb-16" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;font-weight:600">📅 Entrées crontab</p>
+            <div style="display:flex;gap:8px;margin-bottom:8px;font-size:10px;color:var(--text-muted);font-weight:600;padding:0 14px">
+              <span style="min-width:160px">SCHEDULE (min h dom mon dow)</span>
+              <span>COMMANDE</span>
             </div>
-            <div>
-              <p class="text-muted mb-16" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Logs récents</p>
-              <div class="log-box" style="max-height:200px">${escHtml(c.logs||'[pas de log]')}</div>
-            </div>
+            ${entries}
+          </div>
+
+          <div>
+            <p class="text-muted mb-16" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;font-weight:600">📋 Logs cron récents</p>
+            <div class="log-box" style="max-height:180px">${escHtml(c.logs || '[pas de log disponible]')}</div>
           </div>
         </div>`;
       });
 
       if (data.withoutCron.length) {
-        html += `<div class="card"><div class="card-header"><span class="card-title">Sans cron</span></div>
+        html += `<div class="card">
+          <div class="card-header"><span class="card-title text-muted">Conteneurs sans cron</span></div>
           <div class="flex gap-8 flex-wrap">${data.withoutCron.map(n=>`<span class="badge badge-info">${n}</span>`).join('')}</div>
         </div>`;
       }
+
       pc.innerHTML = html;
     } catch(e) {
       pc.innerHTML = `<div class="alert alert-err">Erreur : ${e.message}</div>`;

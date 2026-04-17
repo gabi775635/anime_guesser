@@ -20,43 +20,66 @@
     const pc = document.getElementById('page-content');
     pc.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
     try {
-      const { versions } = await api.versions();
-      if (!versions || !versions.length) {
-        pc.innerHTML = `<div class="card"><p class="text-muted" style="text-align:center;padding:40px">
-          Aucune release disponible.<br><br>
-          Le <strong>version-server</strong> génère les builds automatiquement chaque nuit.
-        </p></div>`;
-        return;
-      }
-      const sorted = [...versions].sort((a,b)=>{
-        const pa=a.version.split('.').map(Number), pb=b.version.split('.').map(Number);
-        for(let i=0;i<3;i++) if((pa[i]??0)!==(pb[i]??0)) return (pb[i]??0)-(pa[i]??0);
-        return 0;
-      });
-      const icons = { android:'🤖', ios:'🍎', windows:'🪟', linux:'🐧', macos:'🍎', desktop:'🖥️' };
-      let html = `<div class="flex items-center gap-8 mb-16" style="justify-content:space-between">
-        <span class="text-muted">${versions.length} version(s)</span>
-        <button class="btn btn-ghost btn-sm" onclick="loadVersions()">↻</button>
-      </div>`;
-      sorted.forEach((v,i) => {
-        html += `<div class="version-card ${i===0?'latest':''}">
-          <div class="flex items-center gap-12 mb-16" style="justify-content:space-between;flex-wrap:wrap">
-            <div class="flex items-center gap-12">
-              <span class="version-num">v${v.version}</span>
-              ${i===0?'<span class="badge badge-ok">Dernière</span>':''}
-              <span class="badge badge-info">${v.channel||'stable'}</span>
-            </div>
-            <span class="text-muted" style="font-size:12px">${fmtDate(v.builtAt)}</span>
-          </div>
-          <div class="flex gap-8 flex-wrap">
-            ${(v.files||[]).map(f=>`
-              <a href="${api.downloadUrl(f.filename)}" download class="btn btn-ghost">
-                ${icons[f.platform?.toLowerCase()]||'📦'} ${f.platform}${f.arch?' '+f.arch:''}${f.sizeMb?' ('+f.sizeMb+' Mo)':''} ⬇
-              </a>`).join('')}
-          </div>
-          ${v.commitHash?`<p class="text-muted mt-8" style="font-size:11px">Commit : <code>${v.commitHash.slice(0,12)}</code></p>`:''}
+      const [dbData, logsText] = await Promise.all([
+        api.versions(),
+        fetch('/api/versions/logs', { headers: { 'x-dashboard-token': localStorage.getItem('dashboard_token') } }).then(r => r.text()).catch(() => '[logs non disponibles]'),
+      ]);
+
+      const { versions } = dbData;
+      const icons = { android:'🤖', ios:'🍎', windows:'🪟', linux:'🐧', macos:'🍎', desktop:'🖥️', unknown:'📦' };
+
+      let html = `
+        <div class="flex items-center gap-8 mb-16" style="justify-content:space-between">
+          <span class="text-muted">${versions.length} version(s) disponible(s)</span>
+          <button class="btn btn-ghost btn-sm" onclick="loadVersions()">↻ Rafraîchir</button>
         </div>`;
-      });
+
+      if (!versions.length) {
+        html += `<div class="alert alert-warn mb-16">
+          Aucune release trouvée dans <code>/releases</code>.<br>
+          Le build se déclenche chaque nuit à 03h30 via le <strong>version-server</strong>,
+          ou manuellement : <code>docker exec animeguesser_version_server build-release.sh</code>
+        </div>`;
+      } else {
+        const sorted = [...versions].sort((a,b) => {
+          const pa=a.version.split('.').map(Number), pb=b.version.split('.').map(Number);
+          for(let i=0;i<3;i++) if((pa[i]??0)!==(pb[i]??0)) return (pb[i]??0)-(pa[i]??0);
+          return 0;
+        });
+        sorted.forEach((v,i) => {
+          html += `<div class="version-card ${i===0?'latest':''}">
+            <div class="flex items-center gap-12 mb-12" style="justify-content:space-between;flex-wrap:wrap">
+              <div class="flex items-center gap-12">
+                <span class="version-num">v${v.version}</span>
+                ${i===0?'<span class="badge badge-ok">Dernière</span>':''}
+                <span class="badge badge-info">${v.channel||'stable'}</span>
+              </div>
+              <span class="text-muted" style="font-size:12px">🕐 ${fmtDate(v.builtAt)}</span>
+            </div>
+            ${v.notes ? `<p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">${escHtml(v.notes)}</p>` : ''}
+            <div class="flex gap-8 flex-wrap">
+              ${(v.files||[]).map(f => `
+                <a href="/api/versions/download/${encodeURIComponent(f.filename)}"
+                   download class="btn btn-ghost">
+                  ${icons[f.platform?.toLowerCase()]||'📦'} ${f.platform}${f.arch?' '+f.arch:''}
+                  ${f.sizeMb ? `<span class="text-muted" style="font-size:11px">${f.sizeMb} Mo</span>` : ''}
+                  ⬇
+                </a>`).join('')}
+            </div>
+            ${v.commitHash ? `<p class="text-muted mt-8" style="font-size:11px">Commit : <code>${v.commitHash.slice(0,12)}</code></p>` : ''}
+          </div>`;
+        });
+      }
+
+      // Logs de build
+      html += `<div class="card mt-16">
+        <div class="card-header">
+          <span class="card-title">📋 Logs du version-server</span>
+          <span class="text-muted" style="font-size:11px">100 dernières lignes</span>
+        </div>
+        <div class="log-box" style="max-height:300px">${escHtml(logsText)}</div>
+      </div>`;
+
       pc.innerHTML = html;
     } catch(e) {
       pc.innerHTML = `<div class="alert alert-err">Erreur : ${e.message}</div>`;

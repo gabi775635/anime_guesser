@@ -4,6 +4,13 @@
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Conteneurs — Dashboard AnimeGuesser</title>
   <link rel="stylesheet" href="/shared/style.css">
+  <style>
+    .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.65); z-index:200; align-items:center; justify-content:center; }
+    .modal-overlay.open { display:flex; }
+    .modal { background:var(--bg2); border:1px solid var(--border); border-radius:var(--radius); padding:28px; width:90%; max-width:520px; position:relative; }
+    .modal-title { font-size:16px; font-weight:700; margin-bottom:20px; }
+    .modal-close { position:absolute; top:12px; right:12px; background:var(--bg3); border:none; color:var(--text-muted); width:28px; height:28px; border-radius:6px; cursor:pointer; font-size:16px; }
+  </style>
 </head>
 <body>
 <script src="/shared/api.js"></script>
@@ -13,24 +20,60 @@
 
   document.getElementById('page-content').innerHTML = `
     <div class="flex items-center gap-8 mb-16" style="justify-content:space-between">
-      <div class="flex gap-8">
-        <button class="btn btn-primary" onclick="spawnContainer('frontend')">+ Frontend</button>
-        <button class="btn btn-ghost"   onclick="spawnContainer('backend')">+ Backend</button>
-      </div>
+      <button class="btn btn-primary" onclick="openSpawnModal()">+ Nouveau conteneur</button>
       <button class="btn btn-ghost btn-sm" onclick="loadContainers()">↻ Rafraîchir</button>
     </div>
     <div id="alert-zone"></div>
     <div class="card">
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Nom</th><th>Service</th><th>État</th><th>CPU</th><th>RAM</th><th>Actions</th></tr></thead>
-          <tbody id="containers-table"><tr><td colspan="6" class="loading-state"><div class="spinner"></div></td></tr></tbody>
+          <thead><tr><th>Nom</th><th>Service</th><th>Image</th><th>État</th><th>CPU</th><th>RAM</th><th>Actions</th></tr></thead>
+          <tbody id="containers-table"><tr><td colspan="7" style="text-align:center;padding:24px"><div class="spinner"></div></td></tr></tbody>
         </table>
+      </div>
+    </div>
+
+    <!-- Modal spawn -->
+    <div class="modal-overlay" id="spawn-modal">
+      <div class="modal">
+        <button class="modal-close" onclick="closeSpawnModal()">×</button>
+        <div class="modal-title">🐳 Nouveau conteneur</div>
+        <div class="form-group">
+          <label>Service <span class="text-muted">(label animeguesser.service)</span></label>
+          <input type="text" id="spawn-service" placeholder="frontend, backend, worker…" list="services-list">
+          <datalist id="services-list">
+            <option value="frontend">
+            <option value="backend">
+            <option value="worker">
+            <option value="cron">
+          </datalist>
+        </div>
+        <div class="form-group">
+          <label>Image Docker <span class="text-muted">(laisser vide = auto-détection)</span></label>
+          <input type="text" id="spawn-image" placeholder="animeguesser-frontend:latest" list="images-list">
+          <datalist id="images-list"></datalist>
+        </div>
+        <div class="form-group">
+          <label>Nom du conteneur <span class="text-muted">(optionnel)</span></label>
+          <input type="text" id="spawn-name" placeholder="auto-généré si vide">
+        </div>
+        <div class="form-group">
+          <label>Variables d'env <span class="text-muted">(une par ligne, format KEY=VALUE)</span></label>
+          <textarea id="spawn-env" rows="3" placeholder="APP_ENV=production&#10;DEBUG=false"></textarea>
+        </div>
+        <div id="spawn-alert"></div>
+        <div class="flex gap-8 mt-16">
+          <button class="btn btn-primary" id="btn-spawn" onclick="doSpawn()">Créer</button>
+          <button class="btn btn-ghost" onclick="closeSpawnModal()">Annuler</button>
+        </div>
       </div>
     </div>`;
 
-  const BASE = ['animeguesser-frontend-1','animeguesser-frontend-2','animeguesser-backend',
-                 'animeguesser-lb','animeguesser-db','animeguesser-dashboard','animeguesser-version-server'];
+  const BASE = [
+    'animeguesser_app_front_1','animeguesser_app_front_2',
+    'animeguesser_app_back','animeguesser_lb','animeguesser_app_bd',
+    'animeguesser_dashboard','animeguesser_version_server','animeguesser_backup',
+  ];
 
   async function loadContainers() {
     try {
@@ -41,19 +84,66 @@
         return `<tr>
           <td><a href="/pages/container-detail.html?id=${c.id}" style="color:var(--accent2);font-weight:500">${c.name}</a></td>
           <td><span class="badge badge-info">${c.service}</span></td>
+          <td><span class="text-muted" style="font-size:11px">${c.image.split('/').pop()}</span></td>
           <td>${statusBadge(c.status)}</td>
           <td class="${cpuColor}">${c.status==='running' ? c.cpu+'%' : '—'}</td>
           <td>${c.status==='running' ? fmtBytes(c.memMB) : '—'}</td>
           <td><div class="btn-group">
             ${c.status==='running'
-              ? `<button class="btn btn-ghost btn-sm" onclick="action('${c.id}','stop')">⏹</button>
-                 <button class="btn btn-ghost btn-sm" onclick="action('${c.id}','restart')">↺</button>`
-              : `<button class="btn btn-ok btn-sm" onclick="action('${c.id}','start')">▶</button>`}
-            ${!isBase ? `<button class="btn btn-danger btn-sm" onclick="confirmDelete('${c.id}','${c.name}')">🗑</button>` : ''}
+              ? `<button class="btn btn-ghost btn-sm" title="Arrêter" onclick="action('${c.id}','stop')">⏹</button>
+                 <button class="btn btn-ghost btn-sm" title="Redémarrer" onclick="action('${c.id}','restart')">↺</button>`
+              : `<button class="btn btn-ok btn-sm" title="Démarrer" onclick="action('${c.id}','start')">▶</button>`}
+            ${!isBase ? `<button class="btn btn-danger btn-sm" title="Supprimer" onclick="confirmDelete('${c.id}','${c.name}')">🗑</button>` : ''}
           </div></td>
         </tr>`;
-      }).join('');
-    } catch (e) { showAlert('err', e.message); }
+      }).join('') || '<tr><td colspan="7" class="text-muted" style="text-align:center;padding:20px">Aucun conteneur trouvé</td></tr>';
+    } catch(e) { showAlert('err', e.message); }
+  }
+
+  async function openSpawnModal() {
+    document.getElementById('spawn-modal').classList.add('open');
+    // Charge les images dispo pour l'autocomplete
+    try {
+      const images = await api.get('/api/containers/images');
+      const dl = document.getElementById('images-list');
+      dl.innerHTML = images.map(i => i.tags.map(t => `<option value="${t}">`).join('')).join('');
+    } catch {}
+  }
+  function closeSpawnModal() {
+    document.getElementById('spawn-modal').classList.remove('open');
+    document.getElementById('spawn-alert').innerHTML = '';
+  }
+
+  async function doSpawn() {
+    const service = document.getElementById('spawn-service').value.trim();
+    const image   = document.getElementById('spawn-image').value.trim();
+    const name    = document.getElementById('spawn-name').value.trim();
+    const envRaw  = document.getElementById('spawn-env').value.trim();
+    const az      = document.getElementById('spawn-alert');
+    const btn     = document.getElementById('btn-spawn');
+
+    if (!service) { az.innerHTML = '<div class="alert alert-err">Service requis.</div>'; return; }
+
+    const env = envRaw ? envRaw.split('\n').map(l => l.trim()).filter(Boolean) : [];
+
+    btn.disabled = true; btn.textContent = '⏳ Création…';
+    az.innerHTML = '';
+    try {
+      const r = await fetch('/api/containers/spawn', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-dashboard-token': localStorage.getItem('dashboard_token') },
+        body: JSON.stringify({ service, image: image||undefined, name: name||undefined, env }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error);
+      closeSpawnModal();
+      showAlert('ok', `✅ ${data.name} créé (${data.id})`);
+      loadContainers();
+    } catch(e) {
+      az.innerHTML = `<div class="alert alert-err">❌ ${e.message}</div>`;
+    } finally {
+      btn.disabled = false; btn.textContent = 'Créer';
+    }
   }
 
   async function action(id, type) {
@@ -62,19 +152,11 @@
       if (type === 'stop')    await api.containerStop(id);
       if (type === 'restart') await api.containerRestart(id);
       setTimeout(loadContainers, 1200);
-    } catch (e) { showAlert('err', e.message); }
-  }
-
-  async function spawnContainer(service) {
-    try {
-      const r = await api.containerSpawn(service);
-      showAlert('ok', `✅ ${r.name} créé`);
-      setTimeout(loadContainers, 1500);
-    } catch (e) { showAlert('err', e.message); }
+    } catch(e) { showAlert('err', e.message); }
   }
 
   function confirmDelete(id, name) {
-    if (!confirm(`Supprimer "${name}" ?`)) return;
+    if (!confirm(`Supprimer définitivement "${name}" ?`)) return;
     api.containerDelete(id)
       .then(() => { showAlert('ok', `✅ ${name} supprimé`); loadContainers(); })
       .catch(e => showAlert('err', e.message));
@@ -83,13 +165,13 @@
   function showAlert(type, msg) {
     const z = document.getElementById('alert-zone');
     z.innerHTML = `<div class="alert alert-${type}">${msg}</div>`;
-    setTimeout(() => { z.innerHTML = ''; }, 4000);
+    setTimeout(() => { z.innerHTML = ''; }, 5000);
   }
 
   loadContainers();
   connectWs(msg => {
     if (['container_added','container_removed','container_started','container_stopped','container_restarted'].includes(msg.type))
-      loadContainers();
+      setTimeout(loadContainers, 500);
   });
 </script>
 </body>

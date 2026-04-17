@@ -16,43 +16,57 @@
     pc.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
     try {
       const d = await api.backups();
-      const statusColor = { ok:'badge-ok', never:'badge-warn', error:'badge-err' }[d.last?.last_status] || 'badge-warn';
+      const lastStatus  = d.last?.last_status || 'never';
+      const statusColor = { success:'badge-ok', never:'badge-warn', error:'badge-err' }[lastStatus] || 'badge-warn';
+
       pc.innerHTML = `
         <div class="flex items-center gap-8 mb-16" style="justify-content:flex-end">
           <button class="btn btn-primary" id="btn-now" onclick="triggerNow()">💾 Backup maintenant</button>
           <button class="btn btn-ghost btn-sm" onclick="loadBackups()">↻</button>
         </div>
         <div id="action-alert"></div>
+
         <div class="cards-grid mb-16">
           <div class="card stat-card">
-            <div class="stat-value"><span class="badge ${statusColor}">${d.last?.last_status||'never'}</span></div>
+            <div class="stat-value"><span class="badge ${statusColor}">${lastStatus}</span></div>
             <div class="stat-label">Dernier statut</div>
             <div class="stat-sub">${fmtDate(d.last?.last_backup)}</div>
+            ${d.last?.last_size ? `<div class="stat-sub">${d.last.last_size} — ${d.last.last_duration_s}s</div>` : ''}
           </div>
           <div class="card stat-card">
-            <div class="stat-value" style="font-size:18px">${fmtDate(d.next_backup)}</div>
+            <div class="stat-value" style="font-size:16px">${fmtDate(d.next_backup)}</div>
             <div class="stat-label">Prochain backup</div>
             <div class="stat-sub">${d.schedule}</div>
           </div>
           <div class="card stat-card">
-            <div class="stat-value">${d.index?.count||0}</div>
+            <div class="stat-value">${d.snapshotCount || 0}</div>
             <div class="stat-label">Snapshots</div>
             <div class="stat-sub">Rétention ${d.retention_days} jours</div>
           </div>
         </div>
+
+        ${d.last?.last_error ? `<div class="alert alert-err mb-16">❌ Dernière erreur : ${escHtml(d.last.last_error)}</div>` : ''}
+
         <div class="cards-grid-2">
           <div class="card">
-            <div class="card-header"><span class="card-title">Snapshots</span></div>
-            ${(d.index?.snapshots||[]).length === 0
-              ? '<p class="text-muted">Aucun snapshot.</p>'
-              : `<table><thead><tr><th>Date</th><th>Taille</th><th>Statut</th></tr></thead>
-                 <tbody>${d.index.snapshots.slice(-10).reverse().map(s=>`
-                   <tr><td>${fmtDate(s.date)}</td><td>${s.size||'—'}</td><td>${statusBadge(s.status||'ok')}</td></tr>
-                 `).join('')}</tbody></table>`}
+            <div class="card-header"><span class="card-title">📁 Snapshots disponibles</span></div>
+            ${!d.snapshots || d.snapshots.length === 0
+              ? '<p class="text-muted">Aucun snapshot trouvé dans /backups.</p>'
+              : `<div class="table-wrap"><table>
+                  <thead><tr><th>Fichier</th><th>Taille</th><th>Date</th><th></th></tr></thead>
+                  <tbody>${d.snapshots.map(s => `
+                    <tr>
+                      <td style="font-size:12px;font-family:monospace">${escHtml(s.file)}</td>
+                      <td>${s.size}</td>
+                      <td style="font-size:12px">${fmtDate(s.date)}</td>
+                      <td><a href="/api/backups/download/${encodeURIComponent(s.file)}" class="btn btn-ghost btn-sm" download>⬇</a></td>
+                    </tr>`).join('')}
+                  </tbody>
+                </table></div>`}
           </div>
           <div class="card">
-            <div class="card-header"><span class="card-title">Logs</span></div>
-            <div class="log-box">${escHtml(d.logs||'[pas de log]')}</div>
+            <div class="card-header"><span class="card-title">📋 Logs du conteneur backup</span></div>
+            <div class="log-box" style="max-height:350px">${escHtml(d.logs || '[logs non disponibles]')}</div>
           </div>
         </div>`;
     } catch(e) {
@@ -67,7 +81,7 @@
     try {
       await api.backupNow();
       az.innerHTML = '<div class="alert alert-ok">✅ Backup terminé</div>';
-      setTimeout(loadBackups, 1000);
+      setTimeout(loadBackups, 1500);
     } catch(e) {
       az.innerHTML = `<div class="alert alert-err">❌ ${e.message}</div>`;
       btn.disabled = false; btn.textContent = '💾 Backup maintenant';

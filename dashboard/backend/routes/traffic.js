@@ -4,7 +4,7 @@ const router  = express.Router();
 const { requireAuth }     = require('../middleware/auth');
 const { docker, getAllContainers } = require('../services/docker');
 
-const LB_CONTAINER = process.env.LB_CONTAINER || 'animeguesser-lb';
+const LB_CONTAINER = process.env.LB_CONTAINER || 'animeguesser_lb';
 
 router.get('/', requireAuth, async (req, res) => {
   try {
