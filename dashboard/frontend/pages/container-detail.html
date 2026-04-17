@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Détail conteneur — Dashboard AnimeGuesser</title>
+  <link rel="stylesheet" href="/shared/style.css">
+  <style>
+    .info-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
+    .info-item { background: var(--bg3); border-radius: 8px; padding: 12px; }
+    .info-item .label { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+    .info-item .value { font-size: 14px; font-weight: 500; word-break: break-all; }
+    .cron-entry { font-family: monospace; background: var(--bg3); border-radius: 6px; padding: 8px 12px; margin-bottom: 6px; font-size: 12px; }
+    .extra-section { margin-top: 8px; }
+    .kv-row { display: flex; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+    .kv-row:last-child { border: none; }
+    .kv-key { color: var(--text-muted); min-width: 120px; flex-shrink: 0; }
+  </style>
+</head>
+<body>
+<script src="/shared/api.js"></script>
+<script>
+const params = new URLSearchParams(location.search);
+const CONTAINER_ID = params.get('id');
+
+(async () => {
+  const r = await fetch('/shared/layout.html');
+  const t = await r.text();
+  const m = t.match(/<script>([\s\S]*?)<\/script>/);
+  if (m) eval(m[1]);
+  requireLogin();
+  if (!CONTAINER_ID) { location.href = '/pages/containers.html'; return; }
+  injectLayout('Détail conteneur', 'containers');
+  loadDetail();
+})();
+
+async function loadDetail() {
+  const pc = document.getElementById('page-content');
+  pc.innerHTML = '<div class="loading-state"><div class="spinner"></div><p class="mt-8">Chargement des données…</p></div>';
+
+  try {
+    const d = await api.containerDetail(CONTAINER_ID);
+    const cpuColor = d.cpu > 80 ? 'text-err' : d.cpu > 40 ? 'text-warn' : 'text-ok';
+
+    pc.innerHTML = `
+      <!-- Header -->
+      <div class="flex items-center gap-12 mb-16" style="justify-content:space-between;flex-wrap:wrap">
+        <div class="flex items-center gap-12">
+          <a href="/pages/containers.html" class="btn btn-ghost btn-sm">← Retour</a>
+          <h2 style="font-size:18px;font-weight:700">${d.name}</h2>
+          ${statusBadge(d.status)}
+          <span class="badge badge-info">${d.service}</span>
+        </div>
+        <div class="btn-group">
+          ${d.running
+            ? `<button class="btn btn-ghost" onclick="doAction('stop')">⏹ Arrêter</button>
+               <button class="btn btn-ghost" onclick="doAction('restart')">↺ Redémarrer</button>`
+            : `<button class="btn btn-ok" onclick="doAction('start')">▶ Démarrer</button>`}
+        </div>
+      </div>
+
+      <div id="action-alert"></div>
+
+      <!-- Stats rapides -->
+      <div class="info-grid mb-16">
+        <div class="info-item">
+          <div class="label">CPU</div>
+          <div class="value ${cpuColor}">${d.cpu}%</div>
+        </div>
+        <div class="info-item">
+          <div class="label">RAM</div>
+          <div class="value">${fmtBytes(d.mem.used)} <span class="text-muted">(${d.mem.pct}%)</span></div>
+        </div>
+        <div class="info-item">
+          <div class="label">Image</div>
+          <div class="value text-muted" style="font-size:12px">${d.image}</div>
+        </div>
+        <div class="info-item">
+          <div class="label">Démarré le</div>
+          <div class="value" style="font-size:12px">${fmtDate(d.startedAt)}</div>
+        </div>
+        <div class="info-item">
+          <div class="label">ID</div>
+          <div class="value text-muted" style="font-size:12px">${CONTAINER_ID}</div>
+        </div>
+        <div class="info-item">
+          <div class="label">Ports</div>
+          <div class="value">${Object.keys(d.ports || {}).join(', ') || '—'}</div>
+        </div>
+      </div>
+
+      <!-- Tabs -->
+      <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('logs')">📄 Logs</button>
+        <button class="tab-btn" onclick="switchTab('cron')">⏰ Cron</button>
+        <button class="tab-btn" onclick="switchTab('extra')">ℹ️ Infos spécifiques</button>
+        <button class="tab-btn" onclick="switchTab('env')">🔧 Environnement</button>
+      </div>
+
+      <!-- Logs -->
+      <div class="tab-pane active" id="tab-logs">
+        <div class="card-header" style="margin-bottom:10px">
+          <span class="text-muted" style="font-size:12px">150 dernières lignes</span>
+          <button class="btn btn-ghost btn-sm" onclick="refreshLogs()">↻ Actualiser</button>
+        </div>
+        <div class="log-box" id="log-content">${escapeHtml(d.logs)}</div>
+      </div>
+
+      <!-- Cron -->
+      <div class="tab-pane" id="tab-cron">
+        <div class="card mb-16">
+          <div class="card-header"><span class="card-title">Entrées crontab</span></div>
+          ${d.cron.entries.length > 0
+            ? d.cron.entries.map(e => `<div class="cron-entry">${escapeHtml(e)}</div>`).join('')
+            : '<p class="text-muted">Aucune entrée cron dans ce conteneur.</p>'}
+        </div>
+        <div class="card">
+          <div class="card-header"><span class="card-title">Logs cron</span></div>
+          <div class="log-box">${escapeHtml(d.cron.logs || '[aucun log]')}</div>
+        </div>
+      </div>
+
+      <!-- Extra / Infos spécifiques -->
+      <div class="tab-pane" id="tab-extra">
+        <div class="card">
+          <div class="card-header"><span class="card-title">Infos spécifiques — ${d.service}</span></div>
+          <div id="extra-content">${renderExtra(d.extra, d.service)}</div>
+        </div>
+      </div>
+
+      <!-- Env -->
+      <div class="tab-pane" id="tab-env">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Variables d'environnement</span>
+            <span class="text-muted" style="font-size:12px">Secrets masqués</span>
+          </div>
+          ${(d.env || []).map(e => {
+            const [k, ...rest] = e.split('=');
+            return `<div class="kv-row"><span class="kv-key">${escapeHtml(k)}</span><span>${escapeHtml(rest.join('='))}</span></div>`;
+          }).join('')}
+        </div>
+      </div>
+    `;
+
+    // Scroll logs en bas
+    const lb = document.getElementById('log-content');
+    if (lb) lb.scrollTop = lb.scrollHeight;
+
+  } catch (e) {
+    pc.innerHTML = `<div class="alert alert-err">Erreur : ${e.message}</div>`;
+  }
+}
+
+function renderExtra(extra, service) {
+  if (!extra || !extra.type) return '<p class="text-muted">Pas d\'infos supplémentaires pour ce service.</p>';
+
+  if (extra.type === 'web') {
+    const sc = extra.statusCodes || {};
+    return `
+      <div class="extra-section">
+        <div class="info-grid">
+          <div class="info-item"><div class="label">Requêtes totales</div><div class="value">${extra.totalRequests}</div></div>
+          <div class="info-item"><div class="label">2xx</div><div class="value text-ok">${sc['2xx']||0}</div></div>
+          <div class="info-item"><div class="label">3xx</div><div class="value text-warn">${sc['3xx']||0}</div></div>
+          <div class="info-item"><div class="label">4xx</div><div class="value text-err">${sc['4xx']||0}</div></div>
+          <div class="info-item"><div class="label">5xx</div><div class="value text-err">${sc['5xx']||0}</div></div>
+          <div class="info-item"><div class="label">Nginx</div><div class="value text-muted" style="font-size:12px">${extra.nginxVersion||'?'}</div></div>
+        </div>
+      </div>`;
+  }
+
+  if (extra.type === 'backend') {
+    return `
+      <div class="extra-section">
+        <div class="kv-row"><span class="kv-key">PHP Version</span><span>${extra.phpVersion}</span></div>
+        <div class="kv-row"><span class="kv-key">Laravel</span><span>${extra.laravelVersion}</span></div>
+      </div>`;
+  }
+
+  if (extra.type === 'version-server') {
+    return `
+      <div class="extra-section">
+        <p class="text-muted mb-16" style="font-size:12px">Releases disponibles dans /releases :</p>
+        <div class="log-box">${escapeHtml(extra.releases)}</div>
+        <div class="mt-8">
+          <a href="/pages/versions.html" class="btn btn-ghost btn-sm">Gérer les versions →</a>
+        </div>
+      </div>`;
+  }
+
+  if (extra.type === 'backup') {
+    return `
+      <div class="extra-section">
+        <p class="text-muted mb-16" style="font-size:12px">Dernière exécution :</p>
+        <div class="log-box">${escapeHtml(extra.lastRun)}</div>
+      </div>`;
+  }
+
+  return `<pre style="font-size:12px;color:var(--text-muted)">${JSON.stringify(extra, null, 2)}</pre>`;
+}
+
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach((b, i) => {
+    const names = ['logs','cron','extra','env'];
+    b.classList.toggle('active', names[i] === name);
+  });
+  document.querySelectorAll('.tab-pane').forEach(p => {
+    p.classList.toggle('active', p.id === 'tab-' + name);
+  });
+}
+
+async function doAction(type) {
+  const az = document.getElementById('action-alert');
+  try {
+    const fns = { start: api.containerStart, stop: api.containerStop, restart: api.containerRestart };
+    await fns[type](CONTAINER_ID);
+    az.innerHTML = `<div class="alert alert-ok">✅ Action "${type}" effectuée</div>`;
+    setTimeout(() => { az.innerHTML = ''; loadDetail(); }, 1500);
+  } catch (e) {
+    az.innerHTML = `<div class="alert alert-err">❌ ${e.message}</div>`;
+  }
+}
+
+async function refreshLogs() {
+  const box = document.getElementById('log-content');
+  if (!box) return;
+  try {
+    const logs = await api.containerLogs(CONTAINER_ID, 200);
+    box.textContent = logs;
+    box.scrollTop = box.scrollHeight;
+  } catch (e) { box.textContent = 'Erreur : ' + e.message; }
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+</body>
+</html>

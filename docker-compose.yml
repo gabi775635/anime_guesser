@@ -1,28 +1,22 @@
 version: "3.9"
 
-# ─────────────────────────────────────────────────────────
-#  AnimeGuesser — Infrastructure
+# ═══════════════════════════════════════════════════════════════════════════════
+#  AnimeGuesser — Infrastructure complète
 #
-#  Structure du repo :
-#  anime_guesser/
-#  ├── docker-compose.yml        ← CE fichier (point d'entrée unique)
-#  ├── docker/                   ← UNIQUEMENT les configs Docker
-#  │   ├── backend/Dockerfile
-#  │   ├── backup/Dockerfile
-#  │   ├── dashboard/Dockerfile
-#  │   ├── frontend/
-#  │   │   ├── Dockerfile            (web — nginx)
-#  │   │   └── Dockerfile.release    (build Tauri : desktop + android)
-#  │   ├── nginx-lb/
-#  │   │   ├── Dockerfile
-#  │   │   └── nginx.conf
-#  │   └── version-watchdog/Dockerfile
-#  ├── dashboard/                ← app Node.js du dashboard
-#  ├── backup/                   ← scripts backup.sh / status.sh
-#  ├── scripts/                  ← scripts partagés (bump-version.sh...)
-#  ├── frontend/                 ← code SolidJS + Tauri
-#  └── backend/                  ← code Laravel
-# ─────────────────────────────────────────────────────────
+#  Arborescence :
+#  ├── animeguesser/
+#  │   ├── frontend/          SolidJS + Tauri (web)
+#  │   └── backend/           Laravel API
+#  ├── dashboard/
+#  │   ├── backend/           Node.js — API dashboard (routes séparées)
+#  │   └── frontend/          HTML multi-pages (pas de SPA)
+#  ├── version-server/        Génère APK Android + desktop, stocke les releases
+#  ├── backup/                Scripts de sauvegarde BDD
+#  ├── docker/                Dockerfiles par service
+#  ├── nginx-lb/              Config load balancer
+#  ├── scripts/               bump-version.sh, etc.
+#  └── .env                   Variables d'environnement (copie de .env.example)
+# ═══════════════════════════════════════════════════════════════════════════════
 
 networks:
   animeguesser:
@@ -31,11 +25,11 @@ networks:
 volumes:
   db_data:
   backup_data:
-  releases:
+  releases:          # Partagé entre version-server et dashboard (lecture releases)
 
 services:
 
-  # ── BASE DE DONNÉES ─────────────────────────────────────
+  # ── BASE DE DONNÉES ─────────────────────────────────────────────────────────
   db:
     image: mysql:8.0
     container_name: animeguesser-db
@@ -54,10 +48,10 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+    labels:
+      - "animeguesser.service=db"
 
-  # ── BACKUP ───────────────────────────────────────────────
-  # Dockerfile : docker/backup/Dockerfile
-  # Scripts    : backup/backup.sh + backup/status.sh
+  # ── BACKUP ──────────────────────────────────────────────────────────────────
   backup:
     build:
       context: ./backup
@@ -70,7 +64,7 @@ services:
       DB_DATABASE: ${DB_DATABASE:-anime_guesser}
       DB_USERNAME: ${DB_USERNAME:-animeguesser}
       DB_PASSWORD: ${DB_PASSWORD:-secret}
-      TZ:          Europe/Paris
+      TZ:          ${TZ:-Europe/Paris}
     volumes:
       - backup_data:/backups
     depends_on:
@@ -82,23 +76,19 @@ services:
       - "animeguesser.service=backup"
       - "animeguesser.managed=true"
 
-  # ── SETUP (one-shot) ─────────────────────────────────────
-  # Lance les migrations + seed au premier démarrage, puis s'arrête.
-  # S'exécute uniquement si la DB est vide (idempotent).
-  # Usage : docker compose run --rm setup
-  #         ou automatiquement via : docker compose up --profile setup
+  # ── SETUP (one-shot) ─────────────────────────────────────────────────────────
   setup:
     build:
-      context: ./backend
-      dockerfile: ../docker/backend/Dockerfile
+      context: ./animeguesser/backend
+      dockerfile: ../../docker/backend/Dockerfile
     container_name: animeguesser-setup
     profiles: ["setup"]
     restart: "no"
     environment:
       APP_ENV:       production
-      APP_KEY:       ${APP_KEY:-base64:7GV2voKTq+KgTL3dyPQKohsRb2f9/v+8asOXsL09Nlg=}
+      APP_KEY:       ${APP_KEY}
       APP_DEBUG:     "false"
-      APP_URL:       http://localhost
+      APP_URL:       ${APP_URL:-http://localhost}
       DB_CONNECTION: mysql
       DB_HOST:       db
       DB_PORT:       3306
@@ -110,30 +100,26 @@ services:
         condition: service_healthy
     networks:
       - animeguesser
-    # Génère la clé si absente, migrate, seed
     command: >
       sh -c "
-        echo '── Génération de la clé Laravel ──' &&
         php artisan key:generate --no-interaction --force &&
-        echo '── Migrations ──' &&
         php artisan migrate --force --no-interaction &&
-        echo '── Seed ──' &&
         php artisan db:seed --force --no-interaction &&
         echo '✓ Setup terminé'
       "
 
-  # ── BACKEND LARAVEL ──────────────────────────────────────
+  # ── BACKEND LARAVEL ──────────────────────────────────────────────────────────
   backend:
     build:
-      context: ./backend
-      dockerfile: ../docker/backend/Dockerfile
+      context: ./animeguesser/backend
+      dockerfile: ../../docker/backend/Dockerfile
     container_name: animeguesser-backend
     restart: unless-stopped
     environment:
       APP_ENV:       production
-      APP_KEY:       ${APP_KEY:-base64:7GV2voKTq+KgTL3dyPQKohsRb2f9/v+8asOXsL09Nlg=}
+      APP_KEY:       ${APP_KEY}
       APP_DEBUG:     "false"
-      APP_URL:       http://localhost
+      APP_URL:       ${APP_URL:-http://localhost}
       DB_CONNECTION: mysql
       DB_HOST:       db
       DB_PORT:       3306
@@ -147,21 +133,17 @@ services:
       - animeguesser
     deploy:
       resources:
-        limits:
-          cpus: "0.20"
-          memory: 512M
-        reservations:
-          cpus: "0.05"
-          memory: 128M
+        limits:    { cpus: "0.20", memory: 512M }
+        reservations: { cpus: "0.05", memory: 128M }
     labels:
       - "animeguesser.service=backend"
       - "animeguesser.managed=true"
 
-  # ── FRONTEND 1 ───────────────────────────────────────────
+  # ── FRONTEND 1 ───────────────────────────────────────────────────────────────
   frontend-1:
     build:
-      context: ./frontend
-      dockerfile: ../docker/frontend/Dockerfile
+      context: ./animeguesser/frontend
+      dockerfile: ../../docker/frontend/Dockerfile
     container_name: animeguesser-frontend-1
     restart: unless-stopped
     networks:
@@ -171,11 +153,11 @@ services:
       - "animeguesser.managed=true"
       - "animeguesser.replica=1"
 
-  # ── FRONTEND 2 ───────────────────────────────────────────
+  # ── FRONTEND 2 ───────────────────────────────────────────────────────────────
   frontend-2:
     build:
-      context: ./frontend
-      dockerfile: ../docker/frontend/Dockerfile
+      context: ./animeguesser/frontend
+      dockerfile: ../../docker/frontend/Dockerfile
     container_name: animeguesser-frontend-2
     restart: unless-stopped
     networks:
@@ -185,7 +167,7 @@ services:
       - "animeguesser.managed=true"
       - "animeguesser.replica=2"
 
-  # ── LOAD BALANCER ────────────────────────────────────────
+  # ── LOAD BALANCER ────────────────────────────────────────────────────────────
   nginx-lb:
     build:
       context: ./docker/nginx-lb
@@ -204,9 +186,9 @@ services:
     labels:
       - "animeguesser.service=loadbalancer"
 
-  # ── DASHBOARD ────────────────────────────────────────────
-  # Dockerfile : docker/dashboard/Dockerfile
-  # Sources    : dashboard/ (server.js, package.json, public/)
+  # ── DASHBOARD ────────────────────────────────────────────────────────────────
+  # Backend  : dashboard/backend/server.js (routes séparées, pas de logique dans server.js)
+  # Frontend : dashboard/frontend/pages/  (multi-pages HTML, pas de SPA)
   dashboard:
     build:
       context: ./dashboard
@@ -219,24 +201,57 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./docker/nginx-lb:/lb-config
       - backup_data:/backups:ro
-      - ./frontend:/frontend:ro          # lecture seule — pour /api/version
+      - releases:/releases:ro          # Lecture des releases générées par version-server
     networks:
       - animeguesser
     environment:
-      DOCKER_NETWORK:  animeguesser
-      LB_CONFIG_PATH:  /lb-config/nginx.conf
-      LB_CONTAINER:    animeguesser-lb
-      DASHBOARD_USER:  ${DASHBOARD_USER:-admin}
-      DASHBOARD_PASS:  ${DASHBOARD_PASS:-changeme}
+      DOCKER_NETWORK:   ${DOCKER_NETWORK:-animeguesser}
+      LB_CONFIG_PATH:   /lb-config/nginx.conf
+      LB_CONTAINER:     ${LB_CONTAINER:-animeguesser-lb}
+      DASHBOARD_USER:   ${DASHBOARD_USER:-admin}
+      DASHBOARD_PASS:   ${DASHBOARD_PASS:-changeme}
+      BACKUP_DIR:       /backups
+      RELEASES_DIR:     /releases
+      VERSIONS_DB:      /releases/versions.json
+      CORS_ORIGIN:      ${CORS_ORIGIN:-*}
+      TZ:               ${TZ:-Europe/Paris}
     labels:
       - "animeguesser.service=dashboard"
 
-  # ── VERSION WATCHDOG ─────────────────────────────────────
-  # Vérifie chaque nuit (03:00) si le code frontend a changé.
-  # Si oui  → bump PATCH dans package.json + tauri.conf.json
-  # Si non  → rien
-  # Dockerfile : docker/version-watchdog/Dockerfile
-  # Script     : scripts/bump-version.sh
+  # ── VERSION SERVER ───────────────────────────────────────────────────────────
+  # Rôle : conteneur lourd (Rust + Tauri + Node) qui génère les exécutables
+  #   - Android APK
+  #   - Linux AppImage / .deb
+  #   - Windows EXE (cross-compilation, optionnel)
+  #   - macOS DMG (nécessite un Mac ou un runner macOS, optionnel)
+  #
+  # Cron interne : build toutes les nuits à 03h30 si un nouveau commit existe
+  # Les releases sont stockées dans le volume `releases` et téléchargeables
+  # depuis le dashboard (page Versions).
+  version-server:
+    build:
+      context: ./version-server
+      dockerfile: ../docker/version-server/Dockerfile
+    container_name: animeguesser-version-server
+    restart: unless-stopped
+    volumes:
+      - ./animeguesser/frontend:/app/frontend   # Sources frontend (lecture)
+      - releases:/releases                       # Releases générées (écriture)
+    environment:
+      TZ: ${TZ:-Europe/Paris}
+    networks:
+      - animeguesser
+    deploy:
+      resources:
+        limits:    { cpus: "1.0", memory: 2G }  # Build Tauri est gourmand
+        reservations: { cpus: "0.05", memory: 128M }
+    labels:
+      - "animeguesser.service=version-server"
+      - "animeguesser.managed=true"
+
+  # ── VERSION WATCHDOG ─────────────────────────────────────────────────────────
+  # Léger : bump PATCH dans package.json chaque nuit à 03h00 si le code a changé
+  # Le version-server buildra ensuite à 03h30 avec la nouvelle version
   version-watchdog:
     build:
       context: ./scripts
@@ -244,8 +259,8 @@ services:
     container_name: animeguesser-version-watchdog
     restart: unless-stopped
     volumes:
-      - ./frontend:/app/frontend
+      - ./animeguesser/frontend:/app/frontend
     environment:
-      TZ: Europe/Paris
+      TZ: ${TZ:-Europe/Paris}
     labels:
       - "animeguesser.service=version-watchdog"

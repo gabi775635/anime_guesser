@@ -2,21 +2,21 @@ FROM alpine:3.19
 
 RUN apk add --no-cache \
         mysql-client \
-        dcron \
         gzip \
         tzdata \
         bash
 
-# Les scripts viennent du dossier backup/ à la racine (context dans docker-compose)
 COPY backup.sh  /usr/local/bin/backup.sh
 COPY status.sh  /usr/local/bin/status.sh
 RUN chmod +x /usr/local/bin/backup.sh /usr/local/bin/status.sh
 
-# Cron : tous les jours à 2h00 UTC
-RUN echo "0 2 * * * /usr/local/bin/backup.sh >> /var/log/backup.log 2>&1" | crontab -
+# Cron via busybox (déjà inclus dans alpine — pas besoin de dcron)
+RUN echo "0 2 * * * /usr/local/bin/backup.sh >> /var/log/backup.log 2>&1" \
+    > /etc/crontabs/root
 
 RUN mkdir -p /backups /var/log
 
 VOLUME ["/backups"]
 
-CMD ["crond", "-f", "-l", "2"]
+# busybox crond : -f = foreground, -l 2 = log level, -d 0 = log to stderr
+CMD ["crond", "-f", "-l", "2", "-d", "0"]

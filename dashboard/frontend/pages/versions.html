@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Versions — Dashboard AnimeGuesser</title>
+  <link rel="stylesheet" href="/shared/style.css">
+  <style>
+    .version-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; margin-bottom: 14px; background: var(--bg2); }
+    .version-card.latest { border-color: var(--accent); }
+    .version-num { font-size: 22px; font-weight: 700; color: var(--accent2); }
+    .platform-tag { display: inline-flex; align-items: center; gap: 6px; }
+    .dl-btn { text-decoration: none; }
+    .platform-icons { font-size: 18px; }
+  </style>
+</head>
+<body>
+<script src="/shared/api.js"></script>
+<script>
+(async () => {
+  const r = await fetch('/shared/layout.html');
+  const t = await r.text();
+  const m = t.match(/<script>([\s\S]*?)<\/script>/);
+  if (m) eval(m[1]);
+  requireLogin();
+  injectLayout('Versions & Releases', 'versions');
+  loadVersions();
+})();
+
+async function loadVersions() {
+  const pc = document.getElementById('page-content');
+  pc.innerHTML = '<div class="loading-state"><div class="spinner"></div><p class="mt-8">Chargement des versions…</p></div>';
+
+  try {
+    const { versions } = await api.versions();
+
+    if (!versions || versions.length === 0) {
+      pc.innerHTML = `
+        <div class="card">
+          <p class="text-muted" style="text-align:center;padding:40px 0">
+            Aucune release disponible.<br><br>
+            Le <strong>version-server</strong> génère automatiquement les builds (Android APK, Desktop EXE/DMG)
+            via le conteneur Docker <code>animeguesser-version-server</code>.<br><br>
+            Lance un build depuis le conteneur ou attends le prochain build automatique.
+          </p>
+        </div>`;
+      return;
+    }
+
+    // Tri décroissant par version
+    const sorted = [...versions].sort((a, b) => {
+      const pa = a.version.split('.').map(Number);
+      const pb = b.version.split('.').map(Number);
+      for (let i = 0; i < 3; i++) if ((pa[i]??0) !== (pb[i]??0)) return (pb[i]??0) - (pa[i]??0);
+      return 0;
+    });
+
+    const platformIcons = { android: '🤖', ios: '🍎', windows: '🪟', linux: '🐧', macos: '🍎', desktop: '🖥️' };
+
+    let html = `
+      <div class="flex items-center gap-8 mb-16" style="justify-content:space-between">
+        <span class="text-muted">${versions.length} version(s) disponible(s)</span>
+        <button class="btn btn-ghost btn-sm" onclick="loadVersions()">↻ Rafraîchir</button>
+      </div>`;
+
+    sorted.forEach((v, idx) => {
+      const isLatest = idx === 0;
+      html += `
+        <div class="version-card ${isLatest ? 'latest' : ''}">
+          <div class="flex items-center gap-12 mb-16" style="justify-content:space-between;flex-wrap:wrap">
+            <div class="flex items-center gap-12">
+              <span class="version-num">v${v.version}</span>
+              ${isLatest ? '<span class="badge badge-ok">Dernière</span>' : ''}
+              <span class="badge badge-info">${v.channel || 'stable'}</span>
+            </div>
+            <span class="text-muted" style="font-size:12px">Buildée le ${fmtDate(v.builtAt)}</span>
+          </div>
+
+          ${v.notes ? `<p style="font-size:13px;color:var(--text-muted);margin-bottom:14px">${escHtml(v.notes)}</p>` : ''}
+
+          <div class="flex gap-8 flex-wrap">
+            ${(v.files || []).map(f => {
+              const icon = platformIcons[f.platform?.toLowerCase()] || '📦';
+              const size = f.sizeMb ? ` (${f.sizeMb} Mo)` : '';
+              return `
+                <a href="${api.downloadUrl(f.filename)}" download class="btn btn-ghost dl-btn">
+                  ${icon} ${f.platform || f.filename}${f.arch ? ' ' + f.arch : ''}${size}
+                  <span style="font-size:10px;opacity:.6">⬇</span>
+                </a>`;
+            }).join('')}
+          </div>
+
+          ${v.commitHash ? `<p class="text-muted mt-8" style="font-size:11px">Commit : <code>${v.commitHash.slice(0,12)}</code></p>` : ''}
+        </div>`;
+    });
+
+    pc.innerHTML = html;
+  } catch (e) {
+    pc.innerHTML = `<div class="alert alert-err">Erreur : ${e.message}<br><span class="text-muted" style="font-size:12px">Le version-server est peut-être arrêté.</span></div>`;
+  }
+}
+
+function escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+</body>
+</html>

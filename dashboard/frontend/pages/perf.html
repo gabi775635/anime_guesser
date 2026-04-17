@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Performance — Dashboard AnimeGuesser</title>
+  <link rel="stylesheet" href="/shared/style.css">
+</head>
+<body>
+<script src="/shared/api.js"></script>
+<script>
+(async () => {
+  const r = await fetch('/shared/layout.html');
+  const t = await r.text();
+  const m = t.match(/<script>([\s\S]*?)<\/script>/);
+  if (m) eval(m[1]);
+  requireLogin();
+  injectLayout('Performance Serveur', 'perf');
+  loadPerf();
+  setInterval(loadPerf, 5000);
+})();
+
+async function loadPerf() {
+  try {
+    const d = await api.serverPerf();
+    const pc = document.getElementById('page-content');
+    if (!pc) return;
+
+    const cpuColor  = c => c > 80 ? 'err' : c > 40 ? 'warn' : 'ok';
+    const memColor  = p => p > 80 ? 'err' : p > 60 ? 'warn' : 'ok';
+
+    const html = `
+      <div class="cards-grid mb-16">
+        <div class="card stat-card">
+          <div class="stat-value ${cpuColor(d.totalCpu) === 'err' ? 'text-err' : cpuColor(d.totalCpu) === 'warn' ? 'text-warn' : 'text-ok'}">${d.totalCpu}%</div>
+          <div class="stat-label">CPU total</div>
+        </div>
+        <div class="card stat-card">
+          <div class="stat-value text-accent">${fmtBytes(d.totalMemMB)}</div>
+          <div class="stat-label">RAM totale utilisée</div>
+        </div>
+        <div class="card stat-card">
+          <div class="stat-value">${d.containers.length}</div>
+          <div class="stat-label">Conteneurs actifs</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Détail par conteneur</span>
+          <span class="text-muted" style="font-size:11px">Mise à jour auto toutes les 5s</span>
+        </div>
+        <table>
+          <thead><tr><th>Conteneur</th><th>Service</th><th>CPU</th><th>RAM</th><th>% RAM</th></tr></thead>
+          <tbody>
+            ${d.containers.sort((a,b)=>b.cpu-a.cpu).map(c => `
+              <tr class="clickable" onclick="location.href='/pages/container-detail.html?id=${c.name}'">
+                <td><a href="/pages/container-detail.html?id=${c.name}" style="color:var(--accent2)">${c.name}</a></td>
+                <td><span class="badge badge-info">${c.service}</span></td>
+                <td>
+                  <div class="flex items-center gap-8">
+                    <div class="progress" style="width:80px"><div class="progress-bar ${cpuColor(c.cpu)}" style="width:${Math.min(c.cpu,100)}%"></div></div>
+                    <span class="text-${cpuColor(c.cpu) === 'ok' ? 'ok' : cpuColor(c.cpu) === 'warn' ? 'warn' : 'err'}">${c.cpu}%</span>
+                  </div>
+                </td>
+                <td>${fmtBytes(c.memMB)}</td>
+                <td>
+                  <div class="flex items-center gap-8">
+                    <div class="progress" style="width:80px"><div class="progress-bar ${memColor(c.memPct)}" style="width:${Math.min(c.memPct,100)}%"></div></div>
+                    <span>${c.memPct}%</span>
+                  </div>
+                </td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+
+    pc.innerHTML = html;
+  } catch (e) {
+    const pc = document.getElementById('page-content');
+    if (pc) pc.innerHTML = `<div class="alert alert-err">Erreur : ${e.message}</div>`;
+  }
+}
+</script>
+</body>
+</html>

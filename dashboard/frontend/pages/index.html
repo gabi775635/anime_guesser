@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Accueil — Dashboard AnimeGuesser</title>
+  <link rel="stylesheet" href="/shared/style.css">
+</head>
+<body>
+<script src="/shared/api.js"></script>
+<script src="/shared/layout.html" type="text/plain" id="layout-tpl"></script>
+<script>
+  // Injecte le layout
+  document.addEventListener('DOMContentLoaded', () => {
+    requireLogin();
+    injectLayout('Vue d\'ensemble', 'home');
+    loadPage();
+    initWs();
+  });
+
+  async function loadPage() {
+    const pc = document.getElementById('page-content');
+    pc.innerHTML = '<div class="loading-state"><div class="spinner"></div><p class="mt-8">Chargement…</p></div>';
+
+    try {
+      const [summary, perf, latest] = await Promise.all([
+        api.containerSummary(),
+        api.serverPerf(),
+        api.versionsLatest().catch(() => ({ latest: null })),
+      ]);
+
+      pc.innerHTML = `
+        <!-- Stat cards -->
+        <div class="cards-grid mb-16">
+          <div class="card stat-card">
+            <div class="stat-value text-ok">${summary.running}</div>
+            <div class="stat-label">Conteneurs actifs</div>
+          </div>
+          <div class="card stat-card">
+            <div class="stat-value ${summary.stopped > 0 ? 'text-err' : 'text-ok'}">${summary.stopped}</div>
+            <div class="stat-label">Arrêtés</div>
+          </div>
+          <div class="card stat-card">
+            <div class="stat-value">${summary.frontends}</div>
+            <div class="stat-label">Frontends</div>
+          </div>
+          <div class="card stat-card">
+            <div class="stat-value">${summary.backends}</div>
+            <div class="stat-label">Backends</div>
+          </div>
+          <div class="card stat-card">
+            <div class="stat-value text-warn">${perf.totalCpu}%</div>
+            <div class="stat-label">CPU total</div>
+          </div>
+          <div class="card stat-card">
+            <div class="stat-value text-accent">${fmtBytes(perf.totalMemMB)}</div>
+            <div class="stat-label">RAM utilisée</div>
+          </div>
+        </div>
+
+        <div class="cards-grid-2">
+          <!-- Conteneurs top CPU -->
+          <div class="card">
+            <div class="card-header"><span class="card-title">🔥 Consommation CPU</span></div>
+            <table>
+              <thead><tr><th>Conteneur</th><th>CPU</th><th>RAM</th></tr></thead>
+              <tbody id="perf-table"></tbody>
+            </table>
+          </div>
+
+          <!-- Dernière version -->
+          <div class="card">
+            <div class="card-header"><span class="card-title">🚀 Dernière version</span></div>
+            <div id="version-info"></div>
+          </div>
+        </div>
+
+        <div class="mt-16 card">
+          <div class="card-header">
+            <span class="card-title">📦 Conteneurs</span>
+            <a href="/pages/containers.html" class="btn btn-ghost btn-sm">Tout voir →</a>
+          </div>
+          <div id="containers-mini"></div>
+        </div>
+      `;
+
+      // Perf table
+      const tbody = document.getElementById('perf-table');
+      perf.containers.sort((a, b) => b.cpu - a.cpu).forEach(c => {
+        const cpuColor = c.cpu > 80 ? 'text-err' : c.cpu > 40 ? 'text-warn' : 'text-ok';
+        tbody.innerHTML += `
+          <tr>
+            <td>${c.name} <small class="text-muted">(${c.service})</small></td>
+            <td class="${cpuColor} text-accent">${c.cpu}%</td>
+            <td>${fmtBytes(c.memMB)}</td>
+          </tr>`;
+      });
+
+      // Version info
+      const vi = document.getElementById('version-info');
+      if (latest.latest) {
+        const v = latest.latest;
+        vi.innerHTML = `
+          <div class="flex items-center gap-12 mb-16">
+            <span class="stat-value text-accent">${v.version}</span>
+            <div>
+              <div class="text-muted" style="font-size:12px">Buildée le</div>
+              <div>${fmtDate(v.builtAt)}</div>
+            </div>
+          </div>
+          <div class="flex gap-8 flex-wrap">
+            ${(v.files || []).map(f => `
+              <a href="${api.downloadUrl(f.filename)}" class="btn btn-ghost btn-sm" download>
+                ⬇️ ${f.platform} (${f.arch || ''})
+              </a>`).join('')}
+          </div>
+          <div class="mt-8">
+            <a href="/pages/versions.html" class="text-muted" style="font-size:12px">Voir toutes les versions →</a>
+          </div>`;
+      } else {
+        vi.innerHTML = '<p class="text-muted">Aucune release disponible.<br><a href="/pages/versions.html">Configurer le version-server →</a></p>';
+      }
+
+      // Mini containers list
+      const containers = await api.containers();
+      const cm = document.getElementById('containers-mini');
+      cm.innerHTML = `
+        <table>
+          <thead><tr><th>Nom</th><th>Service</th><th>État</th><th>CPU</th><th>RAM</th></tr></thead>
+          <tbody>
+            ${containers.slice(0, 8).map(c => `
+              <tr class="clickable" onclick="location.href='/pages/container-detail.html?id=${c.id}'">
+                <td>${c.name}</td>
+                <td><span class="badge badge-info">${c.service}</span></td>
+                <td>${statusBadge(c.status)}</td>
+                <td>${c.cpu}%</td>
+                <td>${fmtBytes(c.memMB)}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>`;
+
+    } catch (e) {
+      pc.innerHTML = `<div class="alert alert-err">Erreur : ${e.message}</div>`;
+    }
+  }
+
+  function initWs() {
+    const ws = connectWs((msg) => {
+      if (msg.type === 'stats_update') {
+        // Mise à jour silencieuse des CPU/RAM dans le tableau perf
+        msg.stats.forEach(s => {
+          const rows = document.querySelectorAll('#perf-table tr');
+          // On pourrait mettre à jour ici, pour l'instant on recharge toutes les 30s
+        });
+      }
+    });
+    const dot = document.getElementById('ws-status');
+    if (dot) {
+      dot.style.color = 'var(--ok)';
+      dot.title = 'Temps réel actif';
+    }
+  }
+
+  // Rechargement auto toutes les 30s
+  setInterval(() => loadPage(), 30000);
+</script>
+
+<!-- Layout injection via include manuel -->
+<script>
+// Hack simple : on inclut le contenu du fichier layout.html en récupérant
+// ses fonctions depuis un script séparé.
+// Les fonctions injectLayout, requireLogin, doLogout sont dans api.js + layout.html
+// → ici on fait un fetch de layout.html et on eval son contenu
+(async () => {
+  const resp = await fetch('/shared/layout.html');
+  const text = await resp.text();
+  // Extrait le contenu du <script> et l'évalue
+  const match = text.match(/<script>([\s\S]*?)<\/script>/);
+  if (match) eval(match[1]);
+  // Déclenche DOMContentLoaded manuellement si déjà passé
+  document.dispatchEvent(new Event('DOMContentLoaded'));
+})();
+</script>
+</body>
+</html>

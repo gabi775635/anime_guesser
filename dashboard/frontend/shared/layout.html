@@ -1,0 +1,86 @@
+<!-- dashboard/frontend/shared/layout.html — inclus via JS dans chaque page -->
+<!-- Usage : <script>injectLayout('Titre de la page', 'nav-id-actif')</script> -->
+<script>
+function injectLayout(pageTitle, activeNav) {
+  requireLogin();
+
+  const layout = `
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        ⚡ AnimeGuesser
+        <span>Dashboard Admin</span>
+      </div>
+
+      <span class="nav-section">Vue globale</span>
+      <a href="/pages/index.html"      class="nav-item ${activeNav==='home'?'active':''}"       id="nav-home">
+        <span class="icon">🏠</span><span>Accueil</span>
+      </a>
+      <a href="/pages/containers.html" class="nav-item ${activeNav==='containers'?'active':''}" id="nav-containers">
+        <span class="icon">📦</span><span>Conteneurs</span>
+      </a>
+      <a href="/pages/traffic.html"    class="nav-item ${activeNav==='traffic'?'active':''}"    id="nav-traffic">
+        <span class="icon">📊</span><span>Trafic</span>
+      </a>
+
+      <span class="nav-section">Système</span>
+      <a href="/pages/cron.html"       class="nav-item ${activeNav==='cron'?'active':''}"       id="nav-cron">
+        <span class="icon">⏰</span><span>Cron</span>
+      </a>
+      <a href="/pages/backups.html"    class="nav-item ${activeNav==='backups'?'active':''}"    id="nav-backups">
+        <span class="icon">💾</span><span>Backups</span>
+      </a>
+      <a href="/pages/perf.html"       class="nav-item ${activeNav==='perf'?'active':''}"       id="nav-perf">
+        <span class="icon">🔥</span><span>Performance</span>
+      </a>
+
+      <span class="nav-section">Releases</span>
+      <a href="/pages/versions.html"   class="nav-item ${activeNav==='versions'?'active':''}"   id="nav-versions">
+        <span class="icon">🚀</span><span>Versions</span>
+      </a>
+
+      <span class="nav-section">Info</span>
+      <a href="/pages/legal.html"      class="nav-item ${activeNav==='legal'?'active':''}"      id="nav-legal">
+        <span class="icon">📋</span><span>Mentions légales</span>
+      </a>
+      <a href="/pages/contact.html"    class="nav-item ${activeNav==='contact'?'active':''}"    id="nav-contact">
+        <span class="icon">✉️</span><span>Contact</span>
+      </a>
+      <a href="/pages/support.html"    class="nav-item ${activeNav==='support'?'active':''}"    id="nav-support">
+        <span class="icon">🛟</span><span>Support</span>
+      </a>
+
+      <div class="sidebar-bottom">
+        <button class="btn btn-ghost btn-sm w-full" onclick="doLogout()">🚪 Déconnexion</button>
+      </div>
+    </aside>
+
+    <div class="main">
+      <div class="topbar">
+        <span class="topbar-title">${pageTitle}</span>
+        <div class="topbar-right">
+          <span class="text-muted" id="ws-status" title="Connexion temps réel">●</span>
+          <span class="text-muted" style="font-size:12px" id="topbar-time"></span>
+        </div>
+      </div>
+      <div class="content" id="page-content"></div>
+    </div>
+  </div>`;
+
+  document.body.innerHTML = layout;
+  startClock();
+}
+
+function startClock() {
+  const el = document.getElementById('topbar-time');
+  if (!el) return;
+  const tick = () => { el.textContent = new Date().toLocaleTimeString('fr-FR'); };
+  tick(); setInterval(tick, 1000);
+}
+
+async function doLogout() {
+  try { await api.logout(); } catch {}
+  localStorage.removeItem('dashboard_token');
+  location.href = '/pages/login.html';
+}
+</script>

@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trafic — Dashboard AnimeGuesser</title>
+  <link rel="stylesheet" href="/shared/style.css">
+</head>
+<body>
+<script src="/shared/api.js"></script>
+<script>
+(async () => {
+  const r = await fetch('/shared/layout.html');
+  const t = await r.text();
+  const m = t.match(/<script>([\s\S]*?)<\/script>/);
+  if (m) eval(m[1]);
+  requireLogin();
+  injectLayout('Trafic & Requêtes', 'traffic');
+  loadTraffic();
+})();
+
+async function loadTraffic() {
+  const pc = document.getElementById('page-content');
+  pc.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
+  try {
+    const d = await api.traffic();
+    const hits = d.containerHits || {};
+    const sc   = d.statusCount   || {};
+    const ot   = d.requestsOverTime || [];
+
+    pc.innerHTML = `
+      <div class="flex items-center gap-8 mb-16" style="justify-content:flex-end">
+        <button class="btn btn-ghost btn-sm" onclick="loadTraffic()">↻ Rafraîchir</button>
+      </div>
+
+      <div class="cards-grid mb-16">
+        <div class="card stat-card"><div class="stat-value">${d.totalRequests}</div><div class="stat-label">Requêtes analysées</div></div>
+        <div class="card stat-card"><div class="stat-value text-ok">${sc['2xx']||0}</div><div class="stat-label">2xx Succès</div></div>
+        <div class="card stat-card"><div class="stat-value text-warn">${sc['3xx']||0}</div><div class="stat-label">3xx Redirections</div></div>
+        <div class="card stat-card"><div class="stat-value text-err">${(sc['4xx']||0)+(sc['5xx']||0)}</div><div class="stat-label">Erreurs 4xx/5xx</div></div>
+      </div>
+
+      <div class="cards-grid-2">
+        <div class="card">
+          <div class="card-header"><span class="card-title">Requêtes par conteneur</span></div>
+          <table>
+            <thead><tr><th>Conteneur</th><th>Requêtes</th><th>%</th></tr></thead>
+            <tbody>
+              ${Object.entries(hits).sort(([,a],[,b])=>b-a).map(([name, count]) => {
+                const pct = d.totalRequests > 0 ? Math.round(count/d.totalRequests*100) : 0;
+                return `<tr>
+                  <td><a href="/pages/container-detail.html?id=${name}" style="color:var(--accent2)">${name}</a></td>
+                  <td>${count}</td>
+                  <td>
+                    <div style="display:flex;align-items:center;gap:8px">
+                      <div class="progress" style="flex:1"><div class="progress-bar ok" style="width:${pct}%"></div></div>
+                      <span style="min-width:32px;text-align:right">${pct}%</span>
+                    </div>
+                  </td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><span class="card-title">Requêtes dans le temps (30 dernières minutes)</span></div>
+          <div id="chart-container" style="height:220px;display:flex;align-items:flex-end;gap:4px;padding:10px 0">
+            ${renderBarChart(ot)}
+          </div>
+        </div>
+      </div>`;
+  } catch (e) {
+    pc.innerHTML = `<div class="alert alert-err">Erreur : ${e.message}</div>`;
+  }
+}
+
+function renderBarChart(data) {
+  if (!data.length) return '<span class="text-muted">Pas de données</span>';
+  const max = Math.max(...data.map(d => d.count), 1);
+  return data.map(d => {
+    const h = Math.max(4, Math.round((d.count / max) * 200));
+    return `<div title="${d.time}: ${d.count} req" style="flex:1;background:var(--accent);border-radius:3px 3px 0 0;height:${h}px;opacity:.8;min-width:6px"></div>`;
+  }).join('');
+}
+</script>
+</body>
+</html>

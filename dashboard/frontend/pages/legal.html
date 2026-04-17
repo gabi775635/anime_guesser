@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mentions légales — AnimeGuesser</title>
+  <link rel="stylesheet" href="/shared/style.css">
+  <script src="/api/config.js"></script>
+  <style>
+    .legal-wrap { max-width: 760px; }
+    h1 { font-size: 24px; font-weight: 800; margin-bottom: 8px; }
+    h2 { font-size: 16px; font-weight: 700; margin: 28px 0 10px; color: var(--accent2); }
+    p, li { line-height: 1.8; color: var(--text-muted); }
+    li { margin-left: 20px; }
+    a { color: var(--accent2); }
+  </style>
+</head>
+<body>
+<script src="/shared/api.js"></script>
+<script>
+(async () => {
+  const r = await fetch('/shared/layout.html');
+  const t = await r.text();
+  const m = t.match(/<script>([\s\S]*?)<\/script>/);
+  if (m) eval(m[1]);
+  // Pas de requireLogin ici — page publique
+  injectLayout('Mentions légales', 'legal');
+
+  document.getElementById('page-content').innerHTML = `
+    <div class="legal-wrap card">
+      <h1>Mentions légales</h1>
+      <p class="text-muted" style="font-size:12px">Dernière mise à jour : ${new Date().toLocaleDateString('fr-FR')}</p>
+
+      <h2>1. Éditeur du site</h2>
+      <p>
+        Le site <strong>AnimeGuesser</strong> est édité par :<br>
+        <strong>${window.LEGAL_NAME || '[Nom / Raison sociale — à renseigner dans .env]'}</strong><br>
+        ${window.LEGAL_ADDRESS || '[Adresse — à renseigner dans .env]'}<br>
+        ${window.LEGAL_SIRET ? 'SIRET : ' + window.LEGAL_SIRET + '<br>' : ''}
+        Email : <a href="mailto:${window.CONTACT_EMAIL || 'contact@animeguesser.fr'}">${window.CONTACT_EMAIL || 'contact@animeguesser.fr'}</a>
+      </p>
+
+      <h2>2. Hébergement</h2>
+      <p>
+        Le site est hébergé sur une infrastructure auto-gérée (VPS / serveur dédié).<br>
+        ${window.HOSTING_PROVIDER || '[Fournisseur d\'hébergement — à renseigner dans .env]'}<br>
+        ${window.HOSTING_ADDRESS || '[Adresse du fournisseur]'}
+      </p>
+
+      <h2>3. Directeur de la publication</h2>
+      <p>${window.LEGAL_NAME || '[Prénom Nom — à renseigner dans .env]'}</p>
+
+      <h2>4. Propriété intellectuelle</h2>
+      <p>
+        L'ensemble des contenus présents sur ce site (textes, images, graphismes, logo, icônes) sont la propriété exclusive de l'éditeur ou font l'objet d'une licence d'utilisation.
+        Toute reproduction, distribution, modification ou utilisation de ces contenus, en tout ou partie, sans autorisation préalable écrite de l'éditeur est strictement interdite.
+      </p>
+      <p>
+        Les noms d'anime, images et données relatives aux séries animées appartiennent à leurs détenteurs respectifs.
+        AnimeGuesser n'est pas affilié à ces ayants droit. L'utilisation de ces données est effectuée à des fins non commerciales, dans un cadre fan-made.
+      </p>
+
+      <h2>5. Données personnelles (RGPD)</h2>
+      <p>
+        AnimeGuesser collecte des données personnelles (pseudonyme, adresse email, scores) dans le cadre de la gestion des comptes utilisateurs.<br>
+        Ces données sont collectées avec le consentement de l'utilisateur et ne sont pas revendues à des tiers.
+      </p>
+      <p>Conformément au Règlement Général sur la Protection des Données (RGPD — UE 2016/679), vous disposez des droits suivants :</p>
+      <ul>
+        <li>Droit d'accès à vos données personnelles</li>
+        <li>Droit de rectification</li>
+        <li>Droit à l'effacement (droit à l'oubli)</li>
+        <li>Droit à la portabilité</li>
+        <li>Droit d'opposition au traitement</li>
+      </ul>
+      <p>Pour exercer ces droits, contactez : <a href="mailto:${window.CONTACT_EMAIL || 'privacy@animeguesser.fr'}">${window.CONTACT_EMAIL || 'privacy@animeguesser.fr'}</a></p>
+      <p>
+        Le responsable du traitement est : ${window.LEGAL_NAME || '[Nom — à renseigner]'}.<br>
+        Les données sont conservées pendant la durée d'activité du compte, et supprimées dans un délai de 30 jours suivant la demande de suppression.
+      </p>
+
+      <h2>6. Cookies</h2>
+      <p>
+        Le site utilise des cookies de session (token d'authentification) strictement nécessaires au fonctionnement du service.
+        Aucun cookie de tracking ou publicitaire n'est utilisé.
+      </p>
+
+      <h2>7. Limitation de responsabilité</h2>
+      <p>
+        L'éditeur ne saurait être tenu responsable des dommages directs ou indirects causés au matériel de l'utilisateur lors de l'accès au site.
+        L'éditeur se réserve le droit de modifier le contenu du site à tout moment et sans préavis.
+      </p>
+
+      <h2>8. Droit applicable</h2>
+      <p>Le présent site est soumis au droit français. Tout litige sera soumis à la compétence exclusive des tribunaux compétents de France.</p>
+
+      <hr class="sep">
+      <p style="font-size:12px">
+        <a href="/pages/contact.html">Contact</a> •
+        <a href="/pages/support.html">Support</a>
+      </p>
+    </div>`;
+})();
+</script>
+</body>
+</html>

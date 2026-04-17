@@ -5,7 +5,7 @@ WORKDIR /app
 
 COPY package*.json ./
 RUN if [ -f package-lock.json ]; then \
-        npm ci --silent; \
+        npm install --silent; \
     else \
         npm install --silent; \
     fi

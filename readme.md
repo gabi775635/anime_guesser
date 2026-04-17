@@ -1,204 +1,112 @@
 # AnimeGuesser
 
-Jeu de devinette de personnages d'anime — SolidJS + Tauri (web / desktop / Android) + Laravel + MySQL.
+Jeu de devinettes d'anime — Infrastructure Docker complète avec dashboard d'administration.
 
----
-
-## Structure du projet
+## Arborescence
 
 ```
-anime_guesser/
-│
-├── docker-compose.yml          ← point d'entrée unique
-│
-├── docker/                     ← UNIQUEMENT Dockerfiles + configs infra
-│   ├── backend/Dockerfile
-│   ├── backup/Dockerfile
-│   ├── dashboard/Dockerfile
-│   ├── frontend/
-│   │   ├── Dockerfile              (web → nginx)
-│   │   └── Dockerfile.release      (Tauri → Desktop + Android)
-│   ├── nginx-lb/
-│   │   ├── Dockerfile
-│   │   └── nginx.conf
-│   └── version-watchdog/Dockerfile
-│
-├── frontend/                   ← SolidJS + Tauri
-│   ├── src/
-│   ├── src-tauri/
-│   │   ├── src/main.rs + lib.rs
-│   │   ├── tauri.conf.json
-│   │   ├── Cargo.toml
-│   │   ├── build.rs
-│   │   └── capabilities/default.json
-│   ├── package.json            ← version auto-bump par version-watchdog
-│   └── vite.config.js
-│
-├── backend/                    ← API Laravel
-│
-├── dashboard/                  ← App Node.js gestion infra
-│   ├── server.js
-│   ├── package.json
-│   └── public/index.html
-│
-├── backup/                     ← Scripts snapshot MySQL
-│   ├── backup.sh
-│   └── status.sh
-│
-└── scripts/
-    └── bump-version.sh         ← Versioning automatique
+animeguesser/
+├── animeguesser/
+│   ├── frontend/          SolidJS + Tauri (web + desktop + Android)
+│   └── backend/           Laravel API REST
+├── dashboard/
+│   ├── backend/           Node.js — API dashboard
+│   │   ├── server.js      Point d'entrée (aucune logique ici)
+│   │   ├── middleware/    auth.js
+│   │   ├── routes/        auth, containers, cron, traffic, backups, versions, server
+│   │   └── services/      docker.js, ws.js
+│   └── frontend/
+│       ├── pages/         Une page HTML par fonctionnalité (pas de SPA)
+│       └── shared/        style.css, api.js, layout.html
+├── version-server/        Génère les releases (APK Android, desktop Linux/Windows)
+├── backup/                Scripts mysqldump automatisés
+├── scripts/               bump-version.sh
+├── docker/                Dockerfiles par service
+├── nginx-lb/              Config load balancer nginx
+├── .env.example           Toutes les variables à configurer
+└── docker-compose.yml     Point d'entrée unique
 ```
-
----
 
 ## Démarrage rapide
 
 ```bash
 # 1. Variables d'environnement
 cp .env.example .env
+# Éditer .env avec tes valeurs
 
-# 2. Build + démarrage de l'infrastructure
-docker compose up -d --build
+# 2. Première installation (migrations + seed)
+docker compose --profile setup up setup
 
-# 3. Setup initial (migrations + seed) — une seule fois
-docker compose run --rm setup
+# 3. Démarrer tous les services
+docker compose up -d
 
-# Web   → http://localhost:8080
-# Admin → http://localhost:9000
+# 4. Dashboard
+# http://localhost:9000
 ```
-
-> Le service `setup` est idempotent (`migrate` ne rejoue pas ce qui est déjà fait)
-> — tu peux le relancer sans risque après une mise à jour du schéma.
-
----
 
 ## Services
 
-| Service            | Rôle                                           | Port   |
-|--------------------|------------------------------------------------|--------|
-| `db`               | MySQL 8.0                                      | —      |
-| `backend`          | API Laravel                                    | —      |
-| `frontend-1/2`     | SolidJS buildé, servi par nginx                | —      |
-| `nginx-lb`         | Load balancer + reverse proxy                  | `8080` |
-| `dashboard`        | Dashboard de gestion infra                     | `9000` |
-| `backup`           | Snapshot MySQL quotidien 02:00, rétention 7j   | —      |
-| `version-watchdog` | Bump PATCH auto si le frontend a changé 03:00  | —      |
+| Service              | Port  | Description                                   |
+|----------------------|-------|-----------------------------------------------|
+| `animeguesser-lb`    | 8080  | Load balancer nginx (frontend)                |
+| `animeguesser-dashboard` | 9000 | Dashboard d'administration               |
+| `animeguesser-frontend-1/2` | —  | Instances frontend SolidJS              |
+| `animeguesser-backend`   | —   | API Laravel                                   |
+| `animeguesser-db`        | —   | MySQL 8                                       |
+| `animeguesser-backup`    | —   | Backup BDD quotidien (cron 02h00)            |
+| `animeguesser-version-server` | — | Build releases Tauri (cron 03h30)       |
+| `animeguesser-version-watchdog` | — | Bump version si nouveau commit (03h00) |
 
----
+## Dashboard — Pages
 
-## Build des exécutables Tauri
+| Page                   | URL                           | Description                          |
+|------------------------|-------------------------------|--------------------------------------|
+| Connexion              | `/pages/login.html`           | Auth                                 |
+| Accueil                | `/pages/index.html`           | Vue globale, stats, dernière version |
+| Conteneurs             | `/pages/containers.html`      | Liste + actions                      |
+| Détail conteneur       | `/pages/container-detail.html?id=X` | Logs, cron, stats, infos spécifiques |
+| Cron                   | `/pages/cron.html`            | Crontabs de tous les conteneurs      |
+| Trafic                 | `/pages/traffic.html`         | Requêtes LB, codes statut            |
+| Performance            | `/pages/perf.html`            | CPU/RAM par conteneur, live          |
+| Backups                | `/pages/backups.html`         | Statut, snapshots, trigger manuel    |
+| Versions               | `/pages/versions.html`        | Releases téléchargeables             |
+| Mentions légales       | `/pages/legal.html`           | RGPD, mentions obligatoires          |
+| Contact                | `/pages/contact.html`         | Formulaire + canaux                  |
+| Support                | `/pages/support.html`         | FAQ, statut services                 |
 
-### Desktop Linux (.AppImage + .deb)
+## Version Server
 
+Le conteneur `version-server` compile automatiquement les exécutables via **Tauri** :
+
+- **Cron** : tous les soirs à 03h30 (après le bump de version à 03h00)
+- **Sorties** : Linux AppImage, .deb, Android APK
+- **Stockage** : volume Docker `releases`, accessible en lecture par le dashboard
+- **Téléchargement** : `GET /api/versions/download/:filename`
+- **Base de données** : `/releases/versions.json` — liste toutes les versions
+
+Build manuel :
 ```bash
-docker build \
-  -f docker/frontend/Dockerfile.release \
-  --target desktop \
-  -t animeguesser-release-desktop \
-  ./frontend
-
-docker run --rm -v ./releases:/out animeguesser-release-desktop
+docker compose exec version-server build-release.sh
 ```
-
-### Android (.apk)
-
-```bash
-docker build \
-  -f docker/frontend/Dockerfile.release \
-  --target android \
-  -t animeguesser-release-android \
-  ./frontend
-
-docker run --rm -v ./releases:/out animeguesser-release-android
-```
-
-### iOS
-
-Impossible sous Linux — nécessite macOS + Xcode.
-
-```bash
-# En local macOS uniquement
-cd frontend && npm run tauri ios build
-```
-
-### Injecter l'URL serveur au build
-
-```bash
-docker build \
-  --build-arg ANIMEGUESSER_API_URL=https://api.monserveur.com/api \
-  -f docker/frontend/Dockerfile.release \
-  --target desktop \
-  ...
-```
-
----
-
-## Versioning automatique
-
-`scripts/bump-version.sh` :
-- Hash le contenu de `frontend/src/`
-- Aucune modif → version inchangée
-- Modif → bump PATCH dans `package.json` + `tauri.conf.json`
-
-Déclenché :
-- Au build Tauri (dans `Dockerfile.release`)
-- Chaque nuit à **03:00** par `version-watchdog`
-
-Visible dans l'onglet **Version** du dashboard.
-
----
 
 ## Variables d'environnement
 
-| Variable           | Défaut          | Description                     |
-|--------------------|-----------------|---------------------------------|
-| `DB_ROOT_PASSWORD` | `rootpassword`  | Root MySQL                      |
-| `DB_DATABASE`      | `anime_guesser` | Nom de la base                  |
-| `DB_USERNAME`      | `animeguesser`  | Utilisateur MySQL               |
-| `DB_PASSWORD`      | `secret`        | Mot de passe MySQL              |
-| `APP_KEY`          | (défaut)        | Clé Laravel — regénérer en prod |
-| `LB_PORT`          | `8080`          | Port load balancer              |
-| `DASHBOARD_PORT`   | `9000`          | Port dashboard                  |
-| `DASHBOARD_USER`   | `admin`         | Login dashboard                 |
-| `DASHBOARD_PASS`   | `changeme`      | Mot de passe dashboard          |
+Voir `.env.example` — toutes les variables sont documentées et regroupées par catégorie :
+- Base de données
+- Laravel
+- Dashboard admin
+- Docker / Réseau
+- Version server
+- Backups
+- Mentions légales (nom, adresse, SIRET)
+- Contact & réseaux sociaux (Discord, Twitter…)
+- Sécurité / CORS
 
----
+## Mentions légales
 
-## Développement local
-
-### Web
-
-```bash
-cd frontend && npm install && npm run dev
-# → http://localhost:1420
-```
-
-### Desktop Tauri
-
-```bash
-cd frontend && npm install && npm run tauri dev
-```
-
-Prérequis : [Rust](https://rustup.rs) + dépendances listées sur [tauri.app/start/prerequisites](https://tauri.app/start/prerequisites/).
-
-### Backend
-
-```bash
-cd backend && composer install
-php artisan migrate --seed
-php artisan serve
-```
-
----
-
-## Dashboard
-
-`http://localhost:9000` — authentification requise.
-
-| Onglet       | Contenu                                                 |
-|--------------|---------------------------------------------------------|
-| Conteneurs   | Liste, scaling, démarrage/arrêt/restart, logs           |
-| Perf serveur | CPU + mémoire temps réel par conteneur (WebSocket)      |
-| Trafic       | Requêtes/min, codes HTTP, répartition par réplique      |
-| Backups      | Snapshots MySQL, statut, déclenchement manuel           |
-| Version      | Version du frontend, hash source, date du dernier bump  |
+Les pages légales (`/pages/legal.html`, `/pages/contact.html`) sont pré-remplies
+depuis les variables d'environnement `LEGAL_*` et `CONTACT_EMAIL`.
+**Renseigner obligatoirement** avant mise en production :
+- `LEGAL_NAME`, `LEGAL_ADDRESS`, `LEGAL_SIRET` (si micro-entreprise)
+- `CONTACT_EMAIL`
+- `HOSTING_PROVIDER`, `HOSTING_ADDRESS`

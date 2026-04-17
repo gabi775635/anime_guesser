@@ -1,0 +1,34 @@
+# ── Secrets ────────────────────────────────────────────────────────────────────
+.env
+*.env.local
+
+# ── Node ───────────────────────────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# ── Laravel ────────────────────────────────────────────────────────────────────
+animeguesser/backend/vendor/
+animeguesser/backend/storage/logs/*.log
+animeguesser/backend/.env
+animeguesser/backend/storage/app/public
+animeguesser/backend/bootstrap/cache/*.php
+
+# ── Rust / Tauri ───────────────────────────────────────────────────────────────
+animeguesser/frontend/src-tauri/target/
+animeguesser/frontend/.version-hash
+
+# ── Build frontend ─────────────────────────────────────────────────────────────
+animeguesser/frontend/dist/
+
+# ── Releases (générées automatiquement, ne pas versionner) ────────────────────
+version-server/releases/
+version-server/db/versions.json
+
+# ── Logs ───────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── OS ─────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db

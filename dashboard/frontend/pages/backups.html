@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Backups — Dashboard AnimeGuesser</title>
+  <link rel="stylesheet" href="/shared/style.css">
+</head>
+<body>
+<script src="/shared/api.js"></script>
+<script>
+(async () => {
+  const r = await fetch('/shared/layout.html');
+  const t = await r.text();
+  const m = t.match(/<script>([\s\S]*?)<\/script>/);
+  if (m) eval(m[1]);
+  requireLogin();
+  injectLayout('Sauvegardes', 'backups');
+  loadBackups();
+})();
+
+async function loadBackups() {
+  const pc = document.getElementById('page-content');
+  pc.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
+  try {
+    const d = await api.backups();
+
+    const statusColor = { ok: 'ok', never: 'warn', error: 'err' }[d.last?.last_status] || 'warn';
+
+    pc.innerHTML = `
+      <div class="flex items-center gap-8 mb-16" style="justify-content:flex-end">
+        <button class="btn btn-primary" id="btn-now" onclick="triggerNow()">💾 Backup maintenant</button>
+        <button class="btn btn-ghost btn-sm" onclick="loadBackups()">↻</button>
+      </div>
+      <div id="action-alert"></div>
+
+      <div class="cards-grid mb-16">
+        <div class="card stat-card">
+          <div class="stat-value badge-${statusColor}" style="font-size:20px">${d.last?.last_status || 'never'}</div>
+          <div class="stat-label">Dernier statut</div>
+          <div class="stat-sub">${fmtDate(d.last?.last_backup)}</div>
+        </div>
+        <div class="card stat-card">
+          <div class="stat-value">${fmtDate(d.next_backup)?.split(' ')[1]||'02:00'}</div>
+          <div class="stat-label">Prochain backup</div>
+          <div class="stat-sub">${d.schedule}</div>
+        </div>
+        <div class="card stat-card">
+          <div class="stat-value">${d.index?.count || 0}</div>
+          <div class="stat-label">Snapshots</div>
+          <div class="stat-sub">Rétention ${d.retention_days} jours</div>
+        </div>
+      </div>
+
+      <div class="cards-grid-2">
+        <div class="card">
+          <div class="card-header"><span class="card-title">Snapshots</span></div>
+          ${(d.index?.snapshots || []).length === 0
+            ? '<p class="text-muted">Aucun snapshot disponible.</p>'
+            : `<table><thead><tr><th>Date</th><th>Taille</th><th>Statut</th></tr></thead><tbody>
+                ${d.index.snapshots.slice(-10).reverse().map(s => `
+                  <tr>
+                    <td>${fmtDate(s.date)}</td>
+                    <td>${s.size || '—'}</td>
+                    <td>${statusBadge(s.status || 'ok')}</td>
+                  </tr>`).join('')}
+               </tbody></table>`}
+        </div>
+        <div class="card">
+          <div class="card-header"><span class="card-title">Logs backup</span></div>
+          <div class="log-box">${escHtml(d.logs || '[pas de log]')}</div>
+        </div>
+      </div>`;
+  } catch (e) {
+    pc.innerHTML = `<div class="alert alert-err">Erreur : ${e.message}</div>`;
+  }
+}
+
+async function triggerNow() {
+  const btn = document.getElementById('btn-now');
+  const az  = document.getElementById('action-alert');
+  btn.disabled = true; btn.textContent = '⏳ En cours…';
+  try {
+    const r = await api.backupNow();
+    az.innerHTML = `<div class="alert alert-ok">✅ Backup terminé</div>`;
+    setTimeout(() => loadBackups(), 1000);
+  } catch (e) {
+    az.innerHTML = `<div class="alert alert-err">❌ ${e.message}</div>`;
+    btn.disabled = false; btn.textContent = '💾 Backup maintenant';
+  }
+}
+
+function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+</script>
+</body>
+</html>

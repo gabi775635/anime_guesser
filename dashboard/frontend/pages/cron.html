@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cron — Dashboard AnimeGuesser</title>
+  <link rel="stylesheet" href="/shared/style.css">
+  <style>
+    .cron-entry { font-family: monospace; background: var(--bg3); border-radius: 6px; padding: 8px 12px; margin-bottom: 6px; font-size: 12px; color: var(--accent2); }
+    .container-cron-block { margin-bottom: 20px; }
+    .container-cron-block h3 { font-size: 14px; font-weight: 600; margin-bottom: 10px; display:flex; align-items:center; gap:8px; }
+  </style>
+</head>
+<body>
+<script src="/shared/api.js"></script>
+<script>
+(async () => {
+  const r = await fetch('/shared/layout.html');
+  const t = await r.text();
+  const m = t.match(/<script>([\s\S]*?)<\/script>/);
+  if (m) eval(m[1]);
+  requireLogin();
+  injectLayout('Planificateur Cron', 'cron');
+  loadCron();
+})();
+
+async function loadCron() {
+  const pc = document.getElementById('page-content');
+  pc.innerHTML = '<div class="loading-state"><div class="spinner"></div><p class="mt-8">Lecture des crontabs dans chaque conteneur…</p></div>';
+
+  try {
+    const data = await api.cronAll();
+
+    let html = `
+      <div class="flex items-center gap-8 mb-16" style="justify-content:space-between">
+        <span class="text-muted">${data.withCron.length} conteneur(s) avec cron actif</span>
+        <button class="btn btn-ghost btn-sm" onclick="loadCron()">↻ Rafraîchir</button>
+      </div>`;
+
+    if (data.withCron.length === 0) {
+      html += '<div class="alert alert-warn">Aucun conteneur running n\'a de crontab configurée.</div>';
+    }
+
+    data.withCron.forEach(c => {
+      html += `
+        <div class="card container-cron-block">
+          <h3>
+            <a href="/pages/container-detail.html?id=${c.id}" style="color:var(--accent2);text-decoration:none">${c.name}</a>
+            <span class="badge badge-info">${c.service}</span>
+          </h3>
+          <div class="cards-grid-2">
+            <div>
+              <p class="text-muted mb-16" style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px">Entrées crontab</p>
+              ${c.entries.map(e => `<div class="cron-entry">${escHtml(e)}</div>`).join('')}
+            </div>
+            <div>
+              <p class="text-muted mb-16" style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px">Logs cron récents</p>
+              <div class="log-box" style="max-height:200px">${escHtml(c.logs || '[pas de log]')}</div>
+            </div>
+          </div>
+        </div>`;
+    });
+
+    if (data.withoutCron.length > 0) {
+      html += `
+        <div class="card mt-16">
+          <div class="card-header"><span class="card-title">Conteneurs sans cron</span></div>
+          <div class="flex gap-8 flex-wrap">
+            ${data.withoutCron.map(n => `<span class="badge badge-info">${n}</span>`).join('')}
+          </div>
+        </div>`;
+    }
+
+    pc.innerHTML = html;
+  } catch (e) {
+    pc.innerHTML = `<div class="alert alert-err">Erreur : ${e.message}</div>`;
+  }
+}
+
+function escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+</body>
+</html>

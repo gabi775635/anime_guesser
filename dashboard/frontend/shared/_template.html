@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PAGE_TITLE — Dashboard AnimeGuesser</title>
+  <link rel="stylesheet" href="/shared/style.css">
+</head>
+<body>
+<script src="/shared/api.js"></script>
+<script>
+// Charge le layout puis la page
+(async () => {
+  const resp = await fetch('/shared/layout.html');
+  const text = await resp.text();
+  const match = text.match(/<script>([\s\S]*?)<\/script>/);
+  if (match) { eval(match[1]); }
+  requireLogin();
+  injectLayout('PAGE_TITLE', 'NAV_ID');
+  initPage();
+})();
+
+async function initPage() {
+  const pc = document.getElementById('page-content');
+  pc.innerHTML = '<!-- PAGE HTML ICI -->';
+}
+</script>
+</body>
+</html>
