@@ -6,8 +6,8 @@
 **/dist/
 
 # ── Tauri build artifacts ─────────────────────────────────────────────────────
-**/src-tauri/target/
-**/src-tauri/gen/
+# **/src-tauri/target/
+# **/src-tauri/gen/
 
 # ── Releases / APK / binaires générés ────────────────────────────────────────
 releases/
