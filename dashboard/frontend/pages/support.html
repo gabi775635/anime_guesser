@@ -7,68 +7,48 @@
 </head>
 <body>
 <script src="/shared/api.js"></script>
+<script src="/shared/layout.js"></script>
 <script>
-(async () => {
-  const r = await fetch('/shared/layout.html');
-  const t = await r.text();
-  const m = t.match(/<script>([\s\S]*?)<\/script>/);
-  if (m) eval(m[1]);
   injectLayout('Support', 'support');
 
-  document.getElementById('page-content').innerHTML = `
-    <div style="max-width:800px">
-      <div class="card mb-16">
-        <div class="card-header"><span class="card-title">🛟 FAQ — Questions fréquentes</span></div>
+  const pc = document.getElementById('page-content');
+  pc.innerHTML = `<div style="max-width:800px">
+    <div class="card mb-16">
+      <div class="card-header"><span class="card-title">🛟 FAQ</span></div>
+      ${[
+        ['Comment signaler un bug ?', 'Via la page <a href="/pages/contact.html">Contact</a> en sélectionnant "Bug".'],
+        ['Je ne peux plus me connecter', 'Essaie la récupération de mot de passe. Si problème persistant, contacte-nous avec ton email.'],
+        ['Supprimer mon compte / mes données ?', 'Demande par email (voir <a href="/pages/legal.html">mentions légales</a>). Suppression sous 30 jours.'],
+        ['L\'appli mobile ne démarre pas', 'Vérifie Android 8+ ou iOS 14+. Réinstalle depuis la page <a href="/pages/versions.html">Versions</a>.'],
+        ['Télécharger la version desktop ?', 'Page <a href="/pages/versions.html">Versions</a> du dashboard.'],
+      ].map(([q,a])=>`
+        <details style="border-bottom:1px solid var(--border);padding:14px 0">
+          <summary style="cursor:pointer;font-weight:600">${q}</summary>
+          <p class="text-muted mt-8" style="padding-left:16px">${a}</p>
+        </details>`).join('')}
+    </div>
+    <div class="card mb-16">
+      <div class="card-header"><span class="card-title">📋 Statut des services</span></div>
+      <div id="status-list"><div class="spinner"></div></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title">📚 Ressources</span></div>
+      <a href="/pages/legal.html" class="btn btn-ghost mb-16">📋 Mentions légales</a>
+      <a href="/pages/contact.html" class="btn btn-ghost">✉️ Contact</a>
+    </div>
+  </div>`;
 
-        ${[
-          ['Comment signaler un bug ?', 'Utilise la page <a href="/pages/contact.html">Contact</a> en sélectionnant "Signalement de bug". Inclus si possible une capture d\'écran et les étapes pour reproduire le problème.'],
-          ['Je ne peux plus me connecter à mon compte', 'Essaie d\'abord la récupération de mot de passe. Si le problème persiste, contacte-nous via le formulaire avec l\'adresse email associée à ton compte.'],
-          ['Comment supprimer mon compte et mes données ?', 'Tu peux en faire la demande par email à l\'adresse indiquée dans les <a href="/pages/legal.html">mentions légales</a>. Tes données seront supprimées sous 30 jours.'],
-          ['L\'application mobile ne se lance pas', 'Vérifie que tu disposes d\'Android 8+ ou iOS 14+. Si le problème persiste, désinstalle et réinstalle la dernière version depuis la page <a href="/pages/versions.html">Versions</a>.'],
-          ['Comment télécharger l\'application desktop ?', 'Rends-toi sur la page <a href="/pages/versions.html">Versions</a> du dashboard et télécharge la version correspondant à ton système (Windows EXE, macOS DMG, Linux AppImage).'],
-          ['Les scores ne sont pas enregistrés', 'Assure-toi d\'être connecté à ton compte avant de jouer. Les parties en mode "invité" ne sont pas sauvegardées.'],
-        ].map(([q, a]) => `
-          <details style="border-bottom:1px solid var(--border);padding:14px 0">
-            <summary style="cursor:pointer;font-weight:600;color:var(--text)">${q}</summary>
-            <p class="text-muted mt-8" style="padding-left:16px">${a}</p>
-          </details>`).join('')}
-      </div>
-
-      <div class="card mb-16">
-        <div class="card-header"><span class="card-title">📋 Statut des services</span></div>
-        <div id="status-list">
-          <div class="loading-state"><div class="spinner"></div></div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-header"><span class="card-title">📚 Ressources</span></div>
-        <div style="display:flex;flex-direction:column;gap:10px">
-          <a href="/pages/legal.html" class="btn btn-ghost">📋 Mentions légales & RGPD</a>
-          <a href="/pages/contact.html" class="btn btn-ghost">✉️ Formulaire de contact</a>
-          ${window.DISCORD_INVITE ? `<a href="${window.DISCORD_INVITE}" target="_blank" class="btn btn-ghost">Discord — support communautaire</a>` : ''}
-        </div>
-      </div>
-    </div>`;
-
-  // Charge le statut des services depuis l'API
-  try {
-    const summary = await api.containerSummary();
-    const sl = document.getElementById('status-list');
-    const allOk = summary.stopped === 0;
-    sl.innerHTML = `
-      <div class="alert ${allOk ? 'alert-ok' : 'alert-warn'}">
-        ${allOk ? '✅ Tous les services sont opérationnels' : `⚠️ ${summary.stopped} service(s) arrêté(s)`}
-      </div>
+  api.containerSummary().then(s => {
+    const ok = s.stopped === 0;
+    document.getElementById('status-list').innerHTML = `
+      <div class="alert ${ok?'alert-ok':'alert-warn'}">${ok?'✅ Tous les services sont opérationnels':'⚠️ '+s.stopped+' service(s) arrêté(s)'}</div>
       <div class="flex gap-8 flex-wrap mt-8">
-        <span class="badge ${summary.frontends > 0 ? 'badge-ok' : 'badge-err'}">Frontend (${summary.frontends})</span>
-        <span class="badge ${summary.backends > 0 ? 'badge-ok' : 'badge-err'}">Backend (${summary.backends})</span>
-        <span class="badge badge-ok">DB</span>
+        <span class="badge ${s.frontends>0?'badge-ok':'badge-err'}">Frontend (${s.frontends})</span>
+        <span class="badge ${s.backends>0?'badge-ok':'badge-err'}">Backend (${s.backends})</span>
       </div>`;
-  } catch {
-    document.getElementById('status-list').innerHTML = '<p class="text-muted">Statut non disponible (non connecté).</p>';
-  }
-})();
+  }).catch(() => {
+    document.getElementById('status-list').innerHTML = '<p class="text-muted">Statut non disponible.</p>';
+  });
 </script>
 </body>
 </html>

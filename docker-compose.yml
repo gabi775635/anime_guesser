@@ -252,15 +252,3 @@ services:
   # ── VERSION WATCHDOG ─────────────────────────────────────────────────────────
   # Léger : bump PATCH dans package.json chaque nuit à 03h00 si le code a changé
   # Le version-server buildra ensuite à 03h30 avec la nouvelle version
-  version-watchdog:
-    build:
-      context: ./scripts
-      dockerfile: ../docker/version-watchdog/Dockerfile
-    container_name: animeguesser-version-watchdog
-    restart: unless-stopped
-    volumes:
-      - ./animeguesser/frontend:/app/frontend
-    environment:
-      TZ: ${TZ:-Europe/Paris}
-    labels:
-      - "animeguesser.service=version-watchdog"

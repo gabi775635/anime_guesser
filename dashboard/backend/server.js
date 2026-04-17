@@ -11,11 +11,15 @@ expressWs(app);
 
 const PORT = process.env.DASHBOARD_PORT || 9000;
 
+// Dans le conteneur Docker :
+//   __dirname       = /app          (backend copié à la racine par le Dockerfile)
+//   frontend files  = /app/frontend (COPY frontend/ ./frontend/)
+const FRONTEND_DIR = path.join(__dirname, 'frontend');
+
 // ── Middleware globaux ─────────────────────────────────────────────────────────
 app.use(express.json());
-app.use(express.static(path.join(__dirname, '../frontend')));
 
-// CORS (dashboard sur port différent en dev)
+// CORS
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin',  process.env.CORS_ORIGIN || '*');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-dashboard-token');
@@ -24,18 +28,17 @@ app.use((req, res, next) => {
   next();
 });
 
-// ── WebSocket ─────────────────────────────────────────────────────────────────
-const { requireAuth } = require('./middleware/auth');
-const ws              = require('./services/ws');
+// Fichiers statiques frontend
+app.use(express.static(FRONTEND_DIR));
 
-app.ws('/ws', (socket, req) => {
-  const token = req.query.token;
-  // Réutilise requireAuth en mode manuel pour le WS
-  const { sessions } = (() => {
-    try { return require('./middleware/auth'); } catch { return { sessions: new Map() }; }
-  })();
-  ws.register(socket);
+// Redirect / → /pages/login.html
+app.get('/', (req, res) => {
+  res.redirect('/pages/login.html');
 });
+
+// ── WebSocket ─────────────────────────────────────────────────────────────────
+const ws = require('./services/ws');
+app.ws('/ws', (socket) => { ws.register(socket); });
 
 // ── Routes API ────────────────────────────────────────────────────────────────
 app.use('/api/auth',       require('./routes/auth'));
@@ -66,11 +69,12 @@ setInterval(async () => {
   } catch {}
 }, 3000);
 
-// ── SPA fallback pour les pages frontend ─────────────────────────────────────
-// Chaque page est un fichier HTML statique → pas de fallback SPA nécessaire
-// On sert juste 404 proprement
+// ── Fallback 404 ──────────────────────────────────────────────────────────────
 app.use((req, res) => {
-  res.status(404).sendFile(path.join(__dirname, '../frontend/pages/404.html'));
+  const p404 = path.join(FRONTEND_DIR, 'pages', '404.html');
+  res.status(404).sendFile(p404, (err) => {
+    if (err) res.status(404).send('404 - Page introuvable');
+  });
 });
 
-app.listen(PORT, () => console.log(`[dashboard-backend] Démarré sur http://localhost:${PORT}`));
+app.listen(PORT, () => console.log(`[dashboard] Démarré sur http://localhost:${PORT}`));

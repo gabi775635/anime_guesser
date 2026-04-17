@@ -1,16 +1,15 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Connexion — Dashboard AnimeGuesser</title>
   <link rel="stylesheet" href="/shared/style.css">
   <style>
-    body { display: flex; align-items: center; justify-content: center; }
-    .login-wrap { width: 100%; max-width: 380px; }
-    .login-logo { text-align: center; margin-bottom: 32px; }
-    .login-logo h1 { font-size: 26px; font-weight: 800; color: var(--accent2); }
-    .login-logo p  { color: var(--text-muted); font-size: 13px; margin-top: 4px; }
+    body { display:flex; align-items:center; justify-content:center; }
+    .login-wrap { width:100%; max-width:380px; }
+    .login-logo { text-align:center; margin-bottom:32px; }
+    .login-logo h1 { font-size:26px; font-weight:800; color:var(--accent2); }
+    .login-logo p  { color:var(--text-muted); font-size:13px; margin-top:4px; }
   </style>
 </head>
 <body>
@@ -22,49 +21,44 @@
     <div class="card">
       <div id="alert-zone"></div>
       <div class="form-group">
-        <label for="username">Identifiant</label>
+        <label>Identifiant</label>
         <input type="text" id="username" placeholder="admin" autocomplete="username">
       </div>
       <div class="form-group">
-        <label for="password">Mot de passe</label>
+        <label>Mot de passe</label>
         <input type="password" id="password" placeholder="••••••••" autocomplete="current-password">
       </div>
-      <button class="btn btn-primary w-full" id="btn-login" onclick="doLogin()">Se connecter</button>
+      <button class="btn btn-primary w-full" id="btn-login">Se connecter</button>
     </div>
-    <p style="text-align:center;margin-top:16px;font-size:12px" class="text-muted">
+    <p style="text-align:center;margin-top:16px;font-size:12px">
       <a href="/pages/legal.html" style="color:var(--text-muted)">Mentions légales</a>
     </p>
   </div>
 
   <script src="/shared/api.js"></script>
   <script>
-    // Redirect si déjà connecté
     if (localStorage.getItem('dashboard_token')) location.href = '/pages/index.html';
 
     document.getElementById('password').addEventListener('keydown', e => {
       if (e.key === 'Enter') doLogin();
     });
+    document.getElementById('btn-login').addEventListener('click', doLogin);
 
     async function doLogin() {
-      const btn  = document.getElementById('btn-login');
-      const az   = document.getElementById('alert-zone');
-      const u    = document.getElementById('username').value.trim();
-      const p    = document.getElementById('password').value;
-
+      const btn = document.getElementById('btn-login');
+      const az  = document.getElementById('alert-zone');
+      const u   = document.getElementById('username').value.trim();
+      const p   = document.getElementById('password').value;
       if (!u || !p) { az.innerHTML = '<div class="alert alert-err">Remplis tous les champs.</div>'; return; }
-
-      btn.disabled = true;
-      btn.textContent = 'Connexion…';
+      btn.disabled = true; btn.textContent = 'Connexion…';
       az.innerHTML = '';
-
       try {
         const { token } = await api.login(u, p);
         localStorage.setItem('dashboard_token', token);
         location.href = '/pages/index.html';
       } catch (e) {
         az.innerHTML = `<div class="alert alert-err">❌ ${e.message}</div>`;
-        btn.disabled = false;
-        btn.textContent = 'Se connecter';
+        btn.disabled = false; btn.textContent = 'Se connecter';
       }
     }
   </script>

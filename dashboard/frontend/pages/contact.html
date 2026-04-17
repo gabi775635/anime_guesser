@@ -4,63 +4,47 @@
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Contact — AnimeGuesser</title>
   <link rel="stylesheet" href="/shared/style.css">
-  <script src="/api/config.js"></script>
+</head>
+<body>
+<script src="/shared/api.js"></script>
+<script src="/shared/layout.js"></script>
+<script src="/api/config.js"></script>
+<script>
+  injectLayout('Contact', 'contact');
 
-  document.getElementById('page-content').innerHTML = `
-    <div style="max-width:600px">
-      <div class="card mb-16">
-        <div class="card-header"><span class="card-title">✉️ Nous contacter</span></div>
-        <p class="text-muted mb-16">Pour toute question concernant le jeu, un bug, ou une suggestion.</p>
-        <div class="form-group">
-          <label>Votre email</label>
-          <input type="email" id="contact-email" placeholder="vous@exemple.com">
-        </div>
-        <div class="form-group">
-          <label>Sujet</label>
-          <select id="contact-subject">
-            <option value="bug">🐛 Signalement de bug</option>
-            <option value="suggestion">💡 Suggestion / amélioration</option>
-            <option value="account">👤 Problème de compte</option>
-            <option value="legal">⚖️ Question légale / RGPD</option>
-            <option value="other">❓ Autre</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Message</label>
-          <textarea id="contact-msg" rows="5" placeholder="Décrivez votre demande…"></textarea>
-        </div>
-        <div id="contact-alert"></div>
-        <button class="btn btn-primary" onclick="sendContact()">Envoyer</button>
+  const pc = document.getElementById('page-content');
+  pc.innerHTML = `<div style="max-width:600px">
+    <div class="card mb-16">
+      <div class="card-header"><span class="card-title">✉️ Nous contacter</span></div>
+      <div class="form-group"><label>Email</label><input type="email" id="c-email" placeholder="vous@exemple.com"></div>
+      <div class="form-group"><label>Sujet</label>
+        <select id="c-subject">
+          <option value="bug">🐛 Bug</option>
+          <option value="suggestion">💡 Suggestion</option>
+          <option value="account">👤 Compte</option>
+          <option value="legal">⚖️ RGPD / Légal</option>
+          <option value="other">❓ Autre</option>
+        </select>
       </div>
+      <div class="form-group"><label>Message</label><textarea id="c-msg" rows="5" placeholder="Votre message…"></textarea></div>
+      <div id="c-alert"></div>
+      <button class="btn btn-primary" onclick="sendContact()">Envoyer</button>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title">📬 Autres canaux</span></div>
+      ${window.DISCORD_INVITE?`<a href="${window.DISCORD_INVITE}" target="_blank" class="btn btn-ghost mb-16">Discord — Support communautaire</a>`:''}
+      ${window.CONTACT_EMAIL?`<a href="mailto:${window.CONTACT_EMAIL}" class="btn btn-ghost mb-16">📧 ${window.CONTACT_EMAIL}</a>`:''}
+      ${window.TWITTER_HANDLE?`<a href="https://twitter.com/${window.TWITTER_HANDLE}" target="_blank" class="btn btn-ghost">𝕏 @${window.TWITTER_HANDLE}</a>`:''}
+    </div>
+  </div>`;
 
-      <div class="card">
-        <div class="card-header"><span class="card-title">📬 Autres canaux</span></div>
-        <div style="display:flex;flex-direction:column;gap:12px">
-          ${window.DISCORD_INVITE ? `
-          <a href="${window.DISCORD_INVITE}" target="_blank" class="btn btn-ghost">
-            <span>Discord</span> — Communauté et support temps réel
-          </a>` : `<p class="text-muted">Discord : à configurer dans .env (DISCORD_INVITE)</p>`}
-          ${window.CONTACT_EMAIL ? `
-          <a href="mailto:${window.CONTACT_EMAIL}" class="btn btn-ghost">
-            📧 ${window.CONTACT_EMAIL}
-          </a>` : ''}
-          ${window.TWITTER_HANDLE ? `
-          <a href="https://twitter.com/${window.TWITTER_HANDLE}" target="_blank" class="btn btn-ghost">
-            𝕏 @${window.TWITTER_HANDLE}
-          </a>` : ''}
-        </div>
-      </div>
-    </div>`;
-})();
-
-function sendContact() {
-  const email = document.getElementById('contact-email')?.value;
-  const msg   = document.getElementById('contact-msg')?.value;
-  const az    = document.getElementById('contact-alert');
-  if (!email || !msg) { az.innerHTML = '<div class="alert alert-err">Remplis tous les champs.</div>'; return; }
-  // Dans un vrai projet : POST /api/contact ou intégration mailgun/sendgrid
-  az.innerHTML = '<div class="alert alert-ok">✅ Message envoyé ! Nous vous répondrons sous 48h.</div>';
-}
+  function sendContact() {
+    const email = document.getElementById('c-email').value;
+    const msg   = document.getElementById('c-msg').value;
+    const az    = document.getElementById('c-alert');
+    if (!email || !msg) { az.innerHTML='<div class="alert alert-err">Remplis tous les champs.</div>'; return; }
+    az.innerHTML = '<div class="alert alert-ok">✅ Message envoyé ! Réponse sous 48h.</div>';
+  }
 </script>
 </body>
 </html>

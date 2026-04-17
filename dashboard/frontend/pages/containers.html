@@ -7,21 +7,11 @@
 </head>
 <body>
 <script src="/shared/api.js"></script>
+<script src="/shared/layout.js"></script>
 <script>
-(async () => {
-  const r = await fetch('/shared/layout.html');
-  const t = await r.text();
-  const m = t.match(/<script>([\s\S]*?)<\/script>/);
-  if (m) eval(m[1]);
-  requireLogin();
   injectLayout('Conteneurs Docker', 'containers');
-  initPage();
-})();
 
-async function initPage() {
-  const pc = document.getElementById('page-content');
-
-  pc.innerHTML = `
+  document.getElementById('page-content').innerHTML = `
     <div class="flex items-center gap-8 mb-16" style="justify-content:space-between">
       <div class="flex gap-8">
         <button class="btn btn-primary" onclick="spawnContainer('frontend')">+ Frontend</button>
@@ -33,99 +23,74 @@ async function initPage() {
     <div class="card">
       <div class="table-wrap">
         <table>
-          <thead>
-            <tr>
-              <th>Nom</th><th>Service</th><th>Image</th><th>État</th>
-              <th>CPU</th><th>RAM</th><th>Actions</th>
-            </tr>
-          </thead>
-          <tbody id="containers-table">
-            <tr><td colspan="7" class="loading-state"><div class="spinner"></div></td></tr>
-          </tbody>
+          <thead><tr><th>Nom</th><th>Service</th><th>État</th><th>CPU</th><th>RAM</th><th>Actions</th></tr></thead>
+          <tbody id="containers-table"><tr><td colspan="6" class="loading-state"><div class="spinner"></div></td></tr></tbody>
         </table>
       </div>
     </div>`;
 
-  loadContainers();
+  const BASE = ['animeguesser-frontend-1','animeguesser-frontend-2','animeguesser-backend',
+                 'animeguesser-lb','animeguesser-db','animeguesser-dashboard','animeguesser-version-server'];
 
-  connectWs(msg => {
-    if (['container_added','container_removed','container_started','container_stopped','container_restarted'].includes(msg.type)) {
-      loadContainers();
-    }
-  });
-}
-
-async function loadContainers() {
-  try {
-    const list = await api.containers();
-    const tbody = document.getElementById('containers-table');
-    if (!tbody) return;
-
-    tbody.innerHTML = list.map(c => {
-      const cpuColor = c.cpu > 80 ? 'text-err' : c.cpu > 40 ? 'text-warn' : '';
-      const isBase   = ['animeguesser-frontend-1','animeguesser-frontend-2','animeguesser-backend',
-                        'animeguesser-lb','animeguesser-db','animeguesser-dashboard','animeguesser-version-server']
-                        .includes(c.name);
-      return `
-        <tr>
-          <td>
-            <a href="/pages/container-detail.html?id=${c.id}" style="color:var(--accent2);text-decoration:none;font-weight:500">
-              ${c.name}
-            </a>
-          </td>
+  async function loadContainers() {
+    try {
+      const list = await api.containers();
+      document.getElementById('containers-table').innerHTML = list.map(c => {
+        const cpuColor = c.cpu > 80 ? 'text-err' : c.cpu > 40 ? 'text-warn' : '';
+        const isBase   = BASE.includes(c.name);
+        return `<tr>
+          <td><a href="/pages/container-detail.html?id=${c.id}" style="color:var(--accent2);font-weight:500">${c.name}</a></td>
           <td><span class="badge badge-info">${c.service}</span></td>
-          <td><span class="text-muted" style="font-size:12px">${c.image.split(':')[0].split('/').pop()}</span></td>
           <td>${statusBadge(c.status)}</td>
-          <td class="${cpuColor}">${c.status === 'running' ? c.cpu + '%' : '—'}</td>
-          <td>${c.status === 'running' ? fmtBytes(c.memMB) : '—'}</td>
-          <td>
-            <div class="btn-group">
-              ${c.status === 'running'
-                ? `<button class="btn btn-ghost btn-sm" onclick="action('${c.id}','stop')">⏹</button>
-                   <button class="btn btn-ghost btn-sm" onclick="action('${c.id}','restart')">↺</button>`
-                : `<button class="btn btn-ok    btn-sm" onclick="action('${c.id}','start')">▶</button>`}
-              ${!isBase
-                ? `<button class="btn btn-danger btn-sm" onclick="confirmDelete('${c.id}','${c.name}')">🗑</button>`
-                : ''}
-            </div>
-          </td>
+          <td class="${cpuColor}">${c.status==='running' ? c.cpu+'%' : '—'}</td>
+          <td>${c.status==='running' ? fmtBytes(c.memMB) : '—'}</td>
+          <td><div class="btn-group">
+            ${c.status==='running'
+              ? `<button class="btn btn-ghost btn-sm" onclick="action('${c.id}','stop')">⏹</button>
+                 <button class="btn btn-ghost btn-sm" onclick="action('${c.id}','restart')">↺</button>`
+              : `<button class="btn btn-ok btn-sm" onclick="action('${c.id}','start')">▶</button>`}
+            ${!isBase ? `<button class="btn btn-danger btn-sm" onclick="confirmDelete('${c.id}','${c.name}')">🗑</button>` : ''}
+          </div></td>
         </tr>`;
-    }).join('');
-  } catch (e) {
-    showAlert('err', e.message);
+      }).join('');
+    } catch (e) { showAlert('err', e.message); }
   }
-}
 
-async function action(id, type) {
-  try {
-    const fns = { start: api.containerStart, stop: api.containerStop, restart: api.containerRestart };
-    await fns[type](id);
-    setTimeout(loadContainers, 1200);
-  } catch (e) { showAlert('err', e.message); }
-}
+  async function action(id, type) {
+    try {
+      if (type === 'start')   await api.containerStart(id);
+      if (type === 'stop')    await api.containerStop(id);
+      if (type === 'restart') await api.containerRestart(id);
+      setTimeout(loadContainers, 1200);
+    } catch (e) { showAlert('err', e.message); }
+  }
 
-async function spawnContainer(service) {
-  try {
-    const r = await api.containerSpawn(service);
-    showAlert('ok', `✅ ${r.name} créé`);
-    setTimeout(loadContainers, 1500);
-  } catch (e) { showAlert('err', e.message); }
-}
+  async function spawnContainer(service) {
+    try {
+      const r = await api.containerSpawn(service);
+      showAlert('ok', `✅ ${r.name} créé`);
+      setTimeout(loadContainers, 1500);
+    } catch (e) { showAlert('err', e.message); }
+  }
 
-function confirmDelete(id, name) {
-  if (!confirm(`Supprimer "${name}" définitivement ?`)) return;
-  api.containerDelete(id).then(() => {
-    showAlert('ok', `✅ ${name} supprimé`);
-    loadContainers();
-  }).catch(e => showAlert('err', e.message));
-}
+  function confirmDelete(id, name) {
+    if (!confirm(`Supprimer "${name}" ?`)) return;
+    api.containerDelete(id)
+      .then(() => { showAlert('ok', `✅ ${name} supprimé`); loadContainers(); })
+      .catch(e => showAlert('err', e.message));
+  }
 
-function showAlert(type, msg) {
-  const z = document.getElementById('alert-zone');
-  if (!z) return;
-  z.innerHTML = `<div class="alert alert-${type}">${msg}</div>`;
-  setTimeout(() => { z.innerHTML = ''; }, 4000);
-}
+  function showAlert(type, msg) {
+    const z = document.getElementById('alert-zone');
+    z.innerHTML = `<div class="alert alert-${type}">${msg}</div>`;
+    setTimeout(() => { z.innerHTML = ''; }, 4000);
+  }
+
+  loadContainers();
+  connectWs(msg => {
+    if (['container_added','container_removed','container_started','container_stopped','container_restarted'].includes(msg.type))
+      loadContainers();
+  });
 </script>
 </body>
 </html>

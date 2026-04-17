@@ -10,6 +10,9 @@
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
+# Dans build-release.sh, avant le build Tauri, ajouter :
+/usr/local/bin/bump-version.sh   # bump d'abord
+
 APP_DIR="/app/frontend"
 RELEASES_DIR="/releases"
 VERSIONS_DB="/releases/versions.json"
