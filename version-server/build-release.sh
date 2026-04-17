@@ -35,22 +35,23 @@ cd "$APP_DIR"
 log "Build Android APK…"
 # Init projet Android si pas encore fait
 if [ ! -d "$APP_DIR/src-tauri/gen/android" ]; then
-  cargo tauri android init 2>>"$LOG_FILE" || log "⚠️  android init échoué"
+  cargo tauri android build --apk \
+  -- --sign /secrets/animeguesser.jks \
+  2>>"$LOG_FILE" || log "⚠️  Build Android échoué (non bloquant)"
 fi
 cargo tauri android build --apk 2>>"$LOG_FILE" || log "⚠️  Build Android échoué (non bloquant)"
 ANDROID_APK=$(find "$APP_DIR/src-tauri/gen/android" -name "*.apk" 2>/dev/null | head -1)
 
-# ── 4. Build Linux ───────────────────────────────────────────────────────────
-log "Build Tauri Linux…"
-cargo tauri build --target x86_64-unknown-linux-gnu 2>>"$LOG_FILE" || die "Tauri build Linux échoué"
-LINUX_APPIMAGE=$(find "$APP_DIR/src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/appimage" -name "*.AppImage" 2>/dev/null | head -1)
-LINUX_DEB=$(find "$APP_DIR/src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/deb" -name "*.deb" 2>/dev/null | head -1)
-
-# ── 5. Build Windows ─────────────────────────────────────────────────────────
-log "Build Tauri Windows…"
-cargo tauri build --target x86_64-pc-windows-gnu 2>>"$LOG_FILE" || log "⚠️  Build Windows échoué (non bloquant)"
-WINDOWS_EXE=$(find "$APP_DIR/src-tauri/target/x86_64-pc-windows-gnu/release/bundle" -name "*.exe" 2>/dev/null | head -1)
-WINDOWS_MSI=$(find "$APP_DIR/src-tauri/target/x86_64-pc-windows-gnu/release/bundle" -name "*.msi" 2>/dev/null | head -1)
+# # ── 4. Build Linux ───────────────────────────────────────────────────────────
+# log "Build Tauri Linux…"
+# cargo tauri build --target x86_64-unknown-linux-gnu 2>>"$LOG_FILE" || die "Tauri build Linux échoué"
+# LINUX_APPIMAGE=$(find "$APP_DIR/src-tauri/target" -name "*.AppImage" 2>/dev/null | head -1)
+# LINUX_DEB=$(find "$APP_DIR/src-tauri/target" -name "*.deb" 2>/dev/null | head -1)
+# # ── 5. Build Windows ─────────────────────────────────────────────────────────
+# log "Build Tauri Windows…"
+# cargo tauri build --target x86_64-pc-windows-gnu 2>>"$LOG_FILE" || log "⚠️  Build Windows échoué (non bloquant)"
+# WINDOWS_EXE=$(find "$APP_DIR/src-tauri/target/x86_64-pc-windows-gnu/release/bundle" -name "*.exe" 2>/dev/null | head -1)
+# WINDOWS_MSI=$(find "$APP_DIR/src-tauri/target/x86_64-pc-windows-gnu/release/bundle" -name "*.msi" 2>/dev/null | head -1)
 
 # ── 6. Copier les releases ────────────────────────────────────────────────────
 FILES_METADATA="[]"
@@ -73,10 +74,10 @@ copy_release() {
 }
 
 [ -n "${ANDROID_APK:-}"    ] && copy_release "$ANDROID_APK"    "android" "arm64" "apk"
-[ -n "${LINUX_APPIMAGE:-}" ] && copy_release "$LINUX_APPIMAGE" "linux"   "x64"   "AppImage"
-[ -n "${LINUX_DEB:-}"      ] && copy_release "$LINUX_DEB"      "linux"   "x64"   "deb"
-[ -n "${WINDOWS_EXE:-}"    ] && copy_release "$WINDOWS_EXE"    "windows" "x64"   "exe"
-[ -n "${WINDOWS_MSI:-}"    ] && copy_release "$WINDOWS_MSI"    "windows" "x64"   "msi"
+# [ -n "${LINUX_APPIMAGE:-}" ] && copy_release "$LINUX_APPIMAGE" "linux"   "x64"   "AppImage"
+# [ -n "${LINUX_DEB:-}"      ] && copy_release "$LINUX_DEB"      "linux"   "x64"   "deb"
+# [ -n "${WINDOWS_EXE:-}"    ] && copy_release "$WINDOWS_EXE"    "windows" "x64"   "exe"
+# [ -n "${WINDOWS_MSI:-}"    ] && copy_release "$WINDOWS_MSI"    "windows" "x64"   "msi"
 
 # ── 7. Commit hash ────────────────────────────────────────────────────────────
 COMMIT_HASH=""

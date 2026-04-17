@@ -28,3 +28,9 @@ releases/
 # ── OS ───────────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
+
+
+#  Config jks
+
+/var/www/anime_guesser/.gitignore
+/var/www/anime_guesser/.gitignore

@@ -1,4 +1,4 @@
-package com.tauri.dev
+package com.animeguesser.app
 
 import android.os.Bundle
 import androidx.activity.enableEdgeToEdge

@@ -214,6 +214,7 @@ services:
     volumes:
       - ./animeguesser/frontend:/app/frontend
       - releases:/releases
+      - ./version-server/animeguesser.jks:/secrets/animeguesser.jks:ro
     environment:
       TZ: ${TZ:-Europe/Paris}
     networks:

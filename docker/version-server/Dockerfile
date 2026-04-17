@@ -60,6 +60,9 @@ RUN yes | sdkmanager --licenses > /dev/null 2>&1 \
 RUN mkdir -p /releases /var/log /app
 WORKDIR /app
 
+ENV KEYSTORE_PATH=/secrets/animeguesser.jks
+ENV KEYSTORE_ALIAS=animeguesser
+
 COPY build-release.sh /usr/local/bin/build-release.sh
 RUN sed -i 's/\r//g' /usr/local/bin/build-release.sh \
     && chmod +x /usr/local/bin/build-release.sh
